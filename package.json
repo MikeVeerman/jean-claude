@@ -2,6 +2,12 @@
   "name": "jean-claude",
   "version": "0.1.0",
   "description": "Sync Claude Code configuration across machines using Git",
+  "author": "Mike Veerman",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MikeVeerman/jean-claude"
+  },
+  "homepage": "https://github.com/MikeVeerman/jean-claude#readme",
   "type": "module",
   "main": "./dist/index.js",
   "bin": {

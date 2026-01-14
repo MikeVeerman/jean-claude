@@ -8,6 +8,7 @@ import {
   doctorCommand,
 } from './commands/index.js';
 import { JeanClaudeError } from './types/index.js';
+import { printLogo } from './utils/logo.js';
 
 const VERSION = '0.1.0';
 
@@ -17,7 +18,11 @@ export function createProgram(): Command {
   program
     .name('jean-claude')
     .description('Sync Claude Code configuration across machines using Git')
-    .version(VERSION);
+    .version(VERSION)
+    .addHelpText('before', () => {
+      printLogo();
+      return '';
+    });
 
   program.addCommand(initCommand);
   program.addCommand(pullCommand);

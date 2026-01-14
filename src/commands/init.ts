@@ -14,8 +14,7 @@ import { printLogo } from '../utils/logo.js';
 
 export const initCommand = new Command('init')
   .description('Initialize Jean-Claude on this machine')
-  .option('-r, --repo <url>', 'Git repository URL')
-  .action(async (options) => {
+  .action(async () => {
     const { jeanClaudeDir, claudeConfigDir } = getConfigPaths();
 
     printLogo();
@@ -37,7 +36,7 @@ export const initCommand = new Command('init')
     }
 
     // Get repository URL
-    const repoUrl = options.repo || (await input('Enter your Git repository URL:'));
+    const repoUrl = await input('Enter your Git repository URL:');
 
     // Test connection to remote
     logger.step(1, 4, 'Testing connection to repository...');

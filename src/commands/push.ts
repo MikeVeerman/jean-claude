@@ -16,9 +16,7 @@ function generateCommitMessage(): string {
 
 export const pushCommand = new Command('push')
   .description('Commit and push config changes to Git')
-  .option('-m, --message <msg>', 'Custom commit message')
-  .option('--no-push', 'Commit only, skip push')
-  .action(async (options) => {
+  .action(async () => {
     const { jeanClaudeDir, claudeConfigDir } = getConfigPaths();
 
     // Verify initialized
@@ -70,13 +68,12 @@ export const pushCommand = new Command('push')
     }
 
     // Commit message
-    const commitMessage = options.message || generateCommitMessage();
+    const commitMessage = generateCommitMessage();
 
     // Commit and push
-    const shouldPush = options.push !== false;
-    logger.step(2, 2, shouldPush ? 'Committing and pushing...' : 'Committing...');
+    logger.step(2, 2, 'Committing and pushing...');
 
-    const result = await commitAndPush(jeanClaudeDir, commitMessage, shouldPush);
+    const result = await commitAndPush(jeanClaudeDir, commitMessage, true);
 
     // Update last sync
     await updateLastSync(jeanClaudeDir);
@@ -88,10 +85,8 @@ export const pushCommand = new Command('push')
     }
     if (result.pushed) {
       logger.success('Pushed to remote');
-    } else if (shouldPush && !gitStatus.remote) {
+    } else if (!gitStatus.remote) {
       logger.warn('No remote configured - changes committed locally only');
       logger.dim('Add a remote with: git -C ~/.jean-claude remote add origin <url>');
-    } else if (!shouldPush) {
-      logger.dim('Skipped push (--no-push flag)');
     }
   });

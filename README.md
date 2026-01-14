@@ -28,11 +28,11 @@ jean-claude --help
 # Initialize Jean-Claude and link to your config repo
 jean-claude init git@github.com:YOURUSER/jean-claude-config.git
 
+# Make edits in ~/.claude, then push them
+jean-claude push
+
 # Pull the canonical config and apply it locally
 jean-claude pull
-
-# Make edits in ~/.jean-claude, then push them
-jean-claude push
 
 # Check whether this machine is in sync
 jean-claude status

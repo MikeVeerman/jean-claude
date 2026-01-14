@@ -10,6 +10,7 @@ import {
   syncFromClaudeConfig,
 } from '../lib/sync.js';
 import { JeanClaudeError, ErrorCode } from '../types/index.js';
+import { printLogo } from '../utils/logo.js';
 
 export const initCommand = new Command('init')
   .description('Initialize Jean-Claude on this machine')
@@ -17,7 +18,8 @@ export const initCommand = new Command('init')
   .action(async (options) => {
     const { jeanClaudeDir, claudeConfigDir } = getConfigPaths();
 
-    logger.heading('Jean-Claude Setup');
+    printLogo();
+    logger.heading('Setup');
 
     // Check if already initialized
     if (fs.existsSync(jeanClaudeDir)) {

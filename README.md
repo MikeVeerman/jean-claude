@@ -16,49 +16,25 @@ Then you sit down at another machine and... nothing. Back to square one.
 - `settings.json` - Your preferences
 - `hooks/` - Your automation scripts
 
-## Installation
+## Quick Start
 
 ```bash
+# Install globally
 npm install -g jean-claude
-```
 
-## Usage
+# Verify install
+jean-claude --help
 
-### First time setup
+# Initialize Jean-Claude and link to your config repo
+jean-claude init git@github.com:YOURUSER/jean-claude-config.git
 
-```bash
-jean-claude init
-```
-
-You'll be asked for a Git repository URL. Create an empty private repo on GitHub/GitLab/etc and paste the URL.
-
-### Push your config
-
-Made changes to your Claude Code setup? Push them:
-
-```bash
-jean-claude push
-```
-
-### Pull on another machine
-
-On a new machine, initialize with the same repo:
-
-```bash
-jean-claude init
-```
-
-Then pull the latest:
-
-```bash
+# Pull the canonical config and apply it locally
 jean-claude pull
-```
 
-### Check status
+# Make edits in ~/.jean-claude, then push them
+jean-claude push
 
-See what's in sync:
-
-```bash
+# Check whether this machine is in sync
 jean-claude status
 ```
 

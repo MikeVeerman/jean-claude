@@ -87,6 +87,6 @@ export const pushCommand = new Command('push')
       logger.success('Pushed to remote');
     } else if (!gitStatus.remote) {
       logger.warn('No remote configured - changes committed locally only');
-      logger.dim('Add a remote with: git -C ~/.jean-claude remote add origin <url>');
+      logger.dim(`Add a remote with: git -C ${formatPath(jeanClaudeDir)} remote add origin <url>`);
     }
   });

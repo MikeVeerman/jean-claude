@@ -105,7 +105,7 @@ export async function pull(dir: string): Promise<{ success: boolean; message: st
       throw new JeanClaudeError(
         'Merge conflict detected',
         ErrorCode.MERGE_CONFLICT,
-        'Resolve conflicts manually in ~/.jean-claude and try again.'
+        `Resolve conflicts manually in ${dir} and try again.`
       );
     }
     throw new JeanClaudeError(

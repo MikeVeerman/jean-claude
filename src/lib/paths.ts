@@ -17,7 +17,7 @@ export function detectPlatform(): 'darwin' | 'linux' {
 }
 
 export function getJeanClaudeDir(): string {
-  return path.join(os.homedir(), '.jean-claude');
+  return path.join(detectClaudeConfigDir(), '.jean-claude');
 }
 
 export function detectClaudeConfigDir(): string {

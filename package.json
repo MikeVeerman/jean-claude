@@ -15,7 +15,9 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "build:mcp": "npm run build && node scripts/package-mcp.js",
     "dev": "tsx src/index.ts",
+    "dev:mcp": "tsx src/mcp-server.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src",
@@ -25,6 +27,10 @@
   "keywords": [
     "claude",
     "claude-code",
+    "mcp",
+    "model-context-protocol",
+    "claude-plugin",
+    "desktop-extension",
     "dotfiles",
     "sync",
     "cli",
@@ -36,9 +42,11 @@
   },
   "files": [
     "dist",
-    "templates"
+    "templates",
+    "manifest.json"
   ],
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.2",
     "chalk": "^5.3.0",
     "commander": "^12.0.0",
     "fs-extra": "^11.2.0",
@@ -46,9 +54,11 @@
     "simple-git": "^3.22.0"
   },
   "devDependencies": {
+    "@types/archiver": "^7.0.0",
     "@types/fs-extra": "^11.0.4",
     "@types/inquirer": "^9.0.7",
     "@types/node": "^20.11.0",
+    "archiver": "^7.0.1",
     "tsx": "^4.7.0",
     "typescript": "^5.3.0",
     "vitest": "^1.2.0"

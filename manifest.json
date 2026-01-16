@@ -1,0 +1,50 @@
+{
+  "name": "jean-claude",
+  "version": "1.2.0",
+  "description": "Sync Claude Code configuration across machines using Git. Keep your CLAUDE.md, settings.json, and hooks synchronized via Git repositories.",
+  "runtime": "node",
+  "entrypoint": "dist/mcp-server.js",
+  "permissions": {
+    "filesystem": {
+      "allow": [
+        "~/.claude/**",
+        "$XDG_CONFIG_HOME/claude-code/**"
+      ]
+    },
+    "network": {
+      "allow": [
+        "github.com",
+        "*.github.com",
+        "gitlab.com",
+        "*.gitlab.com",
+        "bitbucket.org",
+        "*.bitbucket.org"
+      ]
+    }
+  },
+  "user_config": {
+    "repository_url": {
+      "type": "string",
+      "description": "Git repository URL for configuration storage (e.g., https://github.com/user/my-claude-config.git)",
+      "required": false
+    }
+  },
+  "tools": [
+    {
+      "name": "sync_init",
+      "description": "Initialize Jean-Claude with a Git repository URL"
+    },
+    {
+      "name": "sync_push",
+      "description": "Push local Claude configuration changes to Git repository"
+    },
+    {
+      "name": "sync_pull",
+      "description": "Pull and apply Claude configuration from Git repository"
+    },
+    {
+      "name": "sync_status",
+      "description": "Check synchronization status between local and repository"
+    }
+  ]
+}

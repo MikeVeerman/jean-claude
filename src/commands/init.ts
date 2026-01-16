@@ -7,7 +7,6 @@ import { isGitRepo, initRepo, addRemote, testRemoteConnection, cloneRepo } from 
 import {
   createMetaJson,
   writeMetaJson,
-  syncFromClaudeConfig,
 } from '../lib/sync.js';
 import { JeanClaudeError, ErrorCode } from '../types/index.js';
 import { printLogo } from '../utils/logo.js';
@@ -45,7 +44,7 @@ export const initCommand = new Command('init')
     const repoUrl = await input('Repository URL:');
 
     // Test connection to remote
-    logger.step(1, 4, 'Testing connection to repository...');
+    logger.step(1, 3, 'Testing connection to repository...');
     const canConnect = await testRemoteConnection(repoUrl);
     if (!canConnect) {
       throw new JeanClaudeError(
@@ -57,7 +56,7 @@ export const initCommand = new Command('init')
     logger.success('Connection successful');
 
     // Try to clone (will work if repo has content) or init fresh (if empty)
-    logger.step(2, 4, 'Setting up local repository...');
+    logger.step(2, 3, 'Setting up local repository...');
     try {
       await cloneRepo(repoUrl, jeanClaudeDir);
       logger.success('Cloned existing config from repository');
@@ -73,16 +72,8 @@ export const initCommand = new Command('init')
     const meta = createMetaJson(claudeConfigDir);
     await writeMetaJson(jeanClaudeDir, meta);
 
-    // Sync from ~/.claude to ~/.jean-claude
-    logger.step(3, 4, `Syncing from ${formatPath(claudeConfigDir)}...`);
-    const syncResults = await syncFromClaudeConfig(claudeConfigDir, jeanClaudeDir);
-    const synced = syncResults.filter((r) => r.action !== 'skipped');
-    if (synced.length > 0) {
-      logger.success(`Synced ${synced.length} file(s)`);
-    }
-
     // Done
-    logger.step(4, 4, 'Done!');
+    logger.step(3, 3, 'Done!');
     console.log('');
     logger.success('Jean-Claude initialized!');
     console.log('');

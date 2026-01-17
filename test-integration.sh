@@ -507,6 +507,34 @@ test_nested_hooks_directory() {
     fi
 }
 
+test_skills_sync() {
+    print_test "skills directory sync"
+
+    # Create skills directory with multiple skill files
+    mkdir -p "$MACHINE1_DIR/.claude/skills"
+    echo "# My Custom Skill" > "$MACHINE1_DIR/.claude/skills/custom-skill.md"
+    echo "# Another Skill" > "$MACHINE1_DIR/.claude/skills/another-skill.md"
+
+    # Create nested skill directory
+    mkdir -p "$MACHINE1_DIR/.claude/skills/advanced"
+    echo "# Advanced Skill" > "$MACHINE1_DIR/.claude/skills/advanced/complex-skill.md"
+
+    run_jean_claude "$MACHINE1_DIR" push
+    run_jean_claude "$MACHINE2_DIR" pull
+
+    # Verify skills are synced
+    assert_file_exists "$MACHINE2_DIR/.claude/skills/custom-skill.md"
+    assert_file_exists "$MACHINE2_DIR/.claude/skills/another-skill.md"
+    assert_file_exists "$MACHINE2_DIR/.claude/skills/advanced/complex-skill.md"
+
+    # Verify content matches
+    if grep -q "My Custom Skill" "$MACHINE2_DIR/.claude/skills/custom-skill.md"; then
+        print_success "Skills content synced correctly"
+    else
+        print_failure "Skills content not synced correctly"
+    fi
+}
+
 test_missing_claude_md() {
     print_test "missing CLAUDE.md file"
 
@@ -653,6 +681,7 @@ run_all_tests() {
     test_large_settings_file
     test_multiple_hooks
     test_nested_hooks_directory
+    test_skills_sync
     test_missing_claude_md
     test_missing_settings_json
     test_git_status_ahead

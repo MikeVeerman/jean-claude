@@ -54,6 +54,11 @@ export async function resetHard(dir: string): Promise<void> {
   await git.reset(['--hard', 'HEAD']);
 }
 
+export async function cleanUntracked(dir: string): Promise<void> {
+  const git = createGit(dir);
+  await git.clean('f', ['-d']);
+}
+
 export async function getGitStatus(dir: string): Promise<GitStatus> {
   const git = createGit(dir);
 

@@ -3,7 +3,7 @@ import fs from 'fs-extra';
 import chalk from 'chalk';
 import { logger, formatPath } from '../utils/logger.js';
 import { getConfigPaths } from '../lib/paths.js';
-import { isGitRepo, pull, getGitStatus, hasMergeConflicts, resetHard } from '../lib/git.js';
+import { isGitRepo, pull, getGitStatus, hasMergeConflicts, resetHard, cleanUntracked } from '../lib/git.js';
 import { syncToClaudeConfig, updateLastSync } from '../lib/sync.js';
 import { JeanClaudeError, ErrorCode } from '../types/index.js';
 
@@ -39,9 +39,10 @@ export const pullCommand = new Command('pull')
       );
     }
 
-    // Reset any local changes and pull
+    // Reset any local changes, clean untracked files, and pull
     logger.step(1, 2, 'Pulling from Git...');
     await resetHard(jeanClaudeDir);
+    await cleanUntracked(jeanClaudeDir);
     const pullResult = await pull(jeanClaudeDir);
     logger.success(pullResult.message);
 

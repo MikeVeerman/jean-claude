@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
+import { createRequire } from 'module';
 import {
   initCommand,
   pullCommand,
@@ -9,7 +10,8 @@ import {
 import { JeanClaudeError } from './types/index.js';
 import { printLogo } from './utils/logo.js';
 
-const VERSION = '1.2.0';
+const require = createRequire(import.meta.url);
+const { version: VERSION } = require('../package.json');
 
 export function createProgram(): Command {
   const program = new Command();

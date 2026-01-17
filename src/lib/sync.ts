@@ -21,6 +21,11 @@ export const FILE_MAPPINGS: FileMapping[] = [
     target: 'hooks',
     type: 'directory',
   },
+  {
+    source: 'skills',
+    target: 'skills',
+    type: 'directory',
+  },
 ];
 
 function fileHash(filePath: string): string | null {

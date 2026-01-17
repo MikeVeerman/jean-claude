@@ -42,6 +42,49 @@ jean-claude status
 
 Four commands. No options. No complexity. Just sync.
 
+## Development
+
+### Running Tests
+
+Jean-claude has both unit tests and integration tests:
+
+```bash
+# Run all tests (unit + integration)
+npm test
+
+# Run only unit tests (fast)
+npm run test:unit
+
+# Run unit tests in watch mode
+npm run test:unit:watch
+
+# Run with coverage report
+npm run test:coverage
+
+# Run only integration tests
+npm run test:integration
+```
+
+#### Unit Tests
+
+Fast, isolated tests for core logic:
+- File sync and metadata operations
+- Error handling and types
+- Utility functions
+
+#### Integration Tests
+
+End-to-end tests that simulate real usage with a local git repository and multiple machines:
+- **init command**: New repos, existing repos, already initialized, invalid remotes
+- **push command**: Initial files, no changes, modifications, new hooks
+- **pull command**: Basic sync, overwriting local changes, not initialized
+- **status command**: Clean state, uncommitted changes, not initialized
+- **Sync scenarios**: Bidirectional sync between machines
+- **Edge cases**: Empty directories, special characters, large files, multiple hooks, concurrent modifications, nested directories
+- **Metadata**: Persistence, timestamp updates
+
+See [tests/README.md](tests/README.md) for more details.
+
 ---
 
 *Named after the famous Belgian martial artist and philosopher, because your config deserves to do the splits across multiple machines.*

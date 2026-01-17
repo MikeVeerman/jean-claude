@@ -15,6 +15,7 @@ Then you sit down at another machine and... nothing. Back to square one.
 - `CLAUDE.md` - Your custom instructions
 - `settings.json` - Your preferences
 - `hooks/` - Your automation scripts
+- `skills/` - Your custom skills
 
 ## Quick Start
 

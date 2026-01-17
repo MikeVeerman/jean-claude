@@ -36,7 +36,8 @@
   },
   "files": [
     "dist",
-    "templates"
+    "templates",
+    ".claude-plugin"
   ],
   "dependencies": {
     "chalk": "^5.3.0",

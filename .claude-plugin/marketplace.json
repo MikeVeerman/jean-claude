@@ -1,0 +1,13 @@
+{
+  "name": "jean-claude-marketplace",
+  "description": "Claude Code configuration sync tools",
+  "version": "1.0.0",
+  "author": "Mike Veerman",
+  "plugins": [
+    {
+      "name": "jean-claude",
+      "source": ".",
+      "description": "Sync Claude Code configuration across machines using Git"
+    }
+  ]
+}

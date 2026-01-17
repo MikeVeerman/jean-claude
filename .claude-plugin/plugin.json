@@ -1,0 +1,17 @@
+{
+  "name": "jean-claude",
+  "version": "1.2.0",
+  "description": "Sync Claude Code configuration across machines using Git",
+  "author": "Mike Veerman",
+  "repository": "https://github.com/MikeVeerman/jean-claude",
+  "license": "MIT",
+  "engines": {
+    "claude": ">=0.1.0"
+  },
+  "keywords": [
+    "sync",
+    "configuration",
+    "dotfiles",
+    "git"
+  ]
+}

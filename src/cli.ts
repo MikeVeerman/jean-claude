@@ -6,6 +6,7 @@ import {
   pullCommand,
   pushCommand,
   statusCommand,
+  profileCommand,
 } from './commands/index.js';
 import { JeanClaudeError } from './types/index.js';
 import { printLogo } from './utils/logo.js';
@@ -29,6 +30,7 @@ export function createProgram(): Command {
   program.addCommand(pullCommand);
   program.addCommand(pushCommand);
   program.addCommand(statusCommand);
+  program.addCommand(profileCommand);
 
   return program;
 }

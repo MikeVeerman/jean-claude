@@ -66,3 +66,12 @@ export interface DoctorCheck {
   message: string;
   suggestion?: string;
 }
+
+export interface Profile {
+  alias: string;
+  configDir: string;
+}
+
+export interface ProfileConfig {
+  profiles: Record<string, Profile>;
+}

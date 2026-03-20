@@ -26,6 +26,16 @@ export const FILE_MAPPINGS: FileMapping[] = [
     target: 'skills',
     type: 'directory',
   },
+  {
+    source: 'agents',
+    target: 'agents',
+    type: 'directory',
+  },
+  {
+    source: 'keybindings.json',
+    target: 'keybindings.json',
+    type: 'file',
+  },
 ];
 
 function fileHash(filePath: string): string | null {

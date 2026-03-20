@@ -16,6 +16,8 @@ Then you sit down at another machine and... nothing. Back to square one.
 - `settings.json` - Your preferences
 - `hooks/` - Your automation scripts
 - `skills/` - Your custom skills
+- `agents/` - Your custom agents
+- `keybindings.json` - Your keyboard shortcuts
 
 ## Quick Start
 

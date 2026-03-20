@@ -21,7 +21,9 @@ import fs from 'fs-extra';
 const profileCreateCommand = new Command('create')
   .description('Create a new Claude Code profile with its own config directory')
   .argument('[name]', 'Profile name (e.g., "work", "personal")')
-  .action(async (nameArg?: string) => {
+  .option('-y, --yes', 'Skip confirmation prompts')
+  .option('--shell <file>', 'Shell config file to add alias to (e.g., .zshrc, .bashrc)')
+  .action(async (nameArg: string | undefined, options: { yes?: boolean; shell?: string }) => {
     // Verify jean-claude is initialized
     const jcDir = getJeanClaudeDir();
     if (!(await fs.pathExists(jcDir))) {
@@ -60,10 +62,12 @@ const profileCreateCommand = new Command('create')
     );
     console.log();
 
-    const proceed = await confirm('Create this profile?');
-    if (!proceed) {
-      logger.dim('Cancelled.');
-      return;
+    if (!options.yes) {
+      const proceed = await confirm('Create this profile?');
+      if (!proceed) {
+        logger.dim('Cancelled.');
+        return;
+      }
     }
 
     // Create profile
@@ -73,8 +77,13 @@ const profileCreateCommand = new Command('create')
 
     // Install shell alias
     logger.step(2, 3, 'Installing shell alias...');
-    const shellOptions = detectShellConfigFiles();
-    const shellFile = await select('Add alias to which shell config?', shellOptions);
+    let shellFile: string;
+    if (options.shell) {
+      shellFile = options.shell;
+    } else {
+      const shellOptions = detectShellConfigFiles();
+      shellFile = await select('Add alias to which shell config?', shellOptions);
+    }
 
     await installShellAlias(name, profile, shellFile);
     logger.success(`Alias added to ~/${shellFile}`);
@@ -154,7 +163,8 @@ const profileListCommand = new Command('list')
 const profileDeleteCommand = new Command('delete')
   .description('Delete a Claude Code profile')
   .argument('[name]', 'Profile name to delete')
-  .action(async (nameArg?: string) => {
+  .option('-y, --yes', 'Skip confirmation prompts')
+  .action(async (nameArg: string | undefined, options: { yes?: boolean }) => {
     const config = await loadProfiles();
     const names = Object.keys(config.profiles);
 
@@ -189,10 +199,12 @@ const profileDeleteCommand = new Command('delete')
     logger.info('Shared files in your main ~/.claude/ are not affected (they are the originals).');
     console.log();
 
-    const proceed = await confirm('Delete this profile?');
-    if (!proceed) {
-      logger.dim('Cancelled.');
-      return;
+    if (!options.yes) {
+      const proceed = await confirm('Delete this profile?');
+      if (!proceed) {
+        logger.dim('Cancelled.');
+        return;
+      }
     }
 
     // Delete profile

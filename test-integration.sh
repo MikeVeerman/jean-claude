@@ -955,6 +955,250 @@ test_last_sync_timestamp() {
     fi
 }
 
+# Test profile commands
+test_profile_create() {
+    print_test "profile create command"
+
+    # Create a profile using --yes and --shell flags to skip prompts
+    run_jean_claude "$MACHINE1_DIR" profile create work --yes --shell .zshrc
+
+    # Verify profile directory was created
+    assert_dir_exists "$MACHINE1_DIR/.claude-work"
+
+    # Verify CLAUDE.md was created in profile dir
+    assert_file_exists "$MACHINE1_DIR/.claude-work/CLAUDE.md"
+
+    # Verify profiles.json was created in jean-claude repo
+    assert_file_exists "$MACHINE1_DIR/.claude/.jean-claude/profiles.json"
+    assert_file_contains "$MACHINE1_DIR/.claude/.jean-claude/profiles.json" "work"
+}
+
+test_profile_symlinks() {
+    print_test "profile symlinks to shared config"
+
+    # Verify symlinks exist for shared items that exist in main config
+    if [ -f "$MACHINE1_DIR/.claude/settings.json" ]; then
+        if [ -L "$MACHINE1_DIR/.claude-work/settings.json" ]; then
+            print_success "settings.json is a symlink"
+            # Verify symlink points to the right place
+            local target
+            target=$(readlink "$MACHINE1_DIR/.claude-work/settings.json")
+            if [ "$target" = "$MACHINE1_DIR/.claude/settings.json" ]; then
+                print_success "settings.json symlink target is correct"
+            else
+                print_failure "settings.json symlink target is wrong: $target"
+            fi
+        else
+            print_failure "settings.json is not a symlink"
+        fi
+    else
+        print_info "settings.json does not exist in main config, skipping symlink check"
+    fi
+
+    if [ -d "$MACHINE1_DIR/.claude/hooks" ]; then
+        if [ -L "$MACHINE1_DIR/.claude-work/hooks" ]; then
+            print_success "hooks is a symlink"
+        else
+            print_failure "hooks is not a symlink"
+        fi
+    fi
+}
+
+test_profile_symlink_content_shared() {
+    print_test "profile symlinks share content with main config"
+
+    # settings.json may not have existed when profile was created, so refresh symlinks first
+    echo '{"theme": "dark", "shared": true}' > "$MACHINE1_DIR/.claude/settings.json"
+    run_jean_claude "$MACHINE1_DIR" profile refresh work
+
+    # Verify the profile sees the same content through symlink
+    if [ -L "$MACHINE1_DIR/.claude-work/settings.json" ]; then
+        if grep -q "shared" "$MACHINE1_DIR/.claude-work/settings.json"; then
+            print_success "Profile sees main config content through symlink"
+        else
+            print_failure "Profile does not see main config content"
+        fi
+    else
+        print_failure "settings.json is not a symlink in profile"
+    fi
+
+    # Modify main config and verify profile picks it up
+    echo '{"theme": "light", "updated": true}' > "$MACHINE1_DIR/.claude/settings.json"
+    if grep -q "updated" "$MACHINE1_DIR/.claude-work/settings.json"; then
+        print_success "Profile immediately reflects main config changes"
+    else
+        print_failure "Profile does not reflect main config changes"
+    fi
+}
+
+test_profile_independent_claude_md() {
+    print_test "profile has independent CLAUDE.md"
+
+    # Set different CLAUDE.md content in profile
+    echo "# Work profile instructions" > "$MACHINE1_DIR/.claude-work/CLAUDE.md"
+    echo "# Personal instructions" > "$MACHINE1_DIR/.claude/CLAUDE.md"
+
+    # Verify they are independent
+    if grep -q "Work profile" "$MACHINE1_DIR/.claude-work/CLAUDE.md" && \
+       grep -q "Personal" "$MACHINE1_DIR/.claude/CLAUDE.md"; then
+        print_success "CLAUDE.md is independent per profile"
+    else
+        print_failure "CLAUDE.md is not independent"
+    fi
+
+    # Verify profile CLAUDE.md is NOT a symlink
+    if [ -L "$MACHINE1_DIR/.claude-work/CLAUDE.md" ]; then
+        print_failure "CLAUDE.md should not be a symlink"
+    else
+        print_success "CLAUDE.md is a regular file (not symlinked)"
+    fi
+}
+
+test_profile_shell_alias() {
+    print_test "profile shell alias installation"
+
+    # Verify alias was added to .zshrc
+    assert_file_exists "$MACHINE1_DIR/.zshrc"
+    assert_file_contains "$MACHINE1_DIR/.zshrc" "jean-claude profile: work"
+    assert_file_contains "$MACHINE1_DIR/.zshrc" "claude-work"
+    assert_file_contains "$MACHINE1_DIR/.zshrc" "CLAUDE_CONFIG_DIR"
+}
+
+test_profile_list() {
+    print_test "profile list command"
+
+    output=$(run_jean_claude "$MACHINE1_DIR" profile list 2>&1 || true)
+
+    if echo "$output" | grep -q "work"; then
+        print_success "Profile list shows 'work' profile"
+    else
+        print_failure "Profile list does not show 'work' profile"
+    fi
+}
+
+test_profile_create_second() {
+    print_test "create a second profile"
+
+    run_jean_claude "$MACHINE1_DIR" profile create personal --yes --shell .bashrc
+
+    assert_dir_exists "$MACHINE1_DIR/.claude-personal"
+    assert_file_exists "$MACHINE1_DIR/.claude-personal/CLAUDE.md"
+    assert_file_exists "$MACHINE1_DIR/.bashrc"
+    assert_file_contains "$MACHINE1_DIR/.bashrc" "jean-claude profile: personal"
+    assert_file_contains "$MACHINE1_DIR/.bashrc" "claude-personal"
+
+    # Verify profiles.json has both profiles
+    assert_file_contains "$MACHINE1_DIR/.claude/.jean-claude/profiles.json" "work"
+    assert_file_contains "$MACHINE1_DIR/.claude/.jean-claude/profiles.json" "personal"
+}
+
+test_profile_create_duplicate() {
+    print_test "create duplicate profile fails"
+
+    if run_jean_claude "$MACHINE1_DIR" profile create work --yes --shell .zshrc 2>&1; then
+        print_failure "Should have failed creating duplicate profile"
+    else
+        print_success "Correctly rejected duplicate profile"
+    fi
+}
+
+test_profile_create_invalid_name() {
+    print_test "create profile with invalid name fails"
+
+    if run_jean_claude "$MACHINE1_DIR" profile create "INVALID" --yes --shell .zshrc 2>&1; then
+        print_failure "Should have failed with invalid name"
+    else
+        print_success "Correctly rejected invalid profile name"
+    fi
+
+    if run_jean_claude "$MACHINE1_DIR" profile create "123bad" --yes --shell .zshrc 2>&1; then
+        print_failure "Should have failed with name starting with number"
+    else
+        print_success "Correctly rejected name starting with number"
+    fi
+}
+
+test_profile_refresh() {
+    print_test "profile refresh command"
+
+    # Create a new shared item in main config
+    mkdir -p "$MACHINE1_DIR/.claude/agents"
+    echo "# Test agent" > "$MACHINE1_DIR/.claude/agents/test-agent.md"
+
+    # Refresh the profile
+    run_jean_claude "$MACHINE1_DIR" profile refresh work
+
+    # Verify the new symlink was created
+    if [ -L "$MACHINE1_DIR/.claude-work/agents" ]; then
+        print_success "agents symlink created after refresh"
+        if [ -f "$MACHINE1_DIR/.claude-work/agents/test-agent.md" ]; then
+            print_success "agents content accessible through symlink"
+        else
+            print_failure "agents content not accessible through symlink"
+        fi
+    else
+        print_failure "agents symlink not created after refresh"
+    fi
+}
+
+test_profile_delete() {
+    print_test "profile delete command"
+
+    # Delete the personal profile
+    run_jean_claude "$MACHINE1_DIR" profile delete personal --yes
+
+    # Verify directory was removed
+    if [ -d "$MACHINE1_DIR/.claude-personal" ]; then
+        print_failure "Profile directory should have been removed"
+    else
+        print_success "Profile directory removed"
+    fi
+
+    # Verify removed from profiles.json
+    if grep -q "personal" "$MACHINE1_DIR/.claude/.jean-claude/profiles.json"; then
+        print_failure "Profile should have been removed from profiles.json"
+    else
+        print_success "Profile removed from profiles.json"
+    fi
+
+    # Verify alias removed from .bashrc
+    if grep -q "jean-claude profile: personal" "$MACHINE1_DIR/.bashrc"; then
+        print_failure "Alias should have been removed from .bashrc"
+    else
+        print_success "Alias removed from .bashrc"
+    fi
+
+    # Verify work profile still exists
+    assert_dir_exists "$MACHINE1_DIR/.claude-work"
+    assert_file_contains "$MACHINE1_DIR/.claude/.jean-claude/profiles.json" "work"
+}
+
+test_profile_delete_preserves_main() {
+    print_test "profile delete does not affect main config"
+
+    # Verify main config files are untouched after profile operations
+    assert_file_exists "$MACHINE1_DIR/.claude/settings.json"
+
+    if grep -q "updated" "$MACHINE1_DIR/.claude/settings.json"; then
+        print_success "Main config settings.json is intact"
+    else
+        print_failure "Main config settings.json was affected"
+    fi
+}
+
+test_profile_not_initialized() {
+    print_test "profile commands when not initialized"
+
+    MACHINE_NOINIT_DIR="$TEST_DIR/machine-noinit"
+    mkdir -p "$MACHINE_NOINIT_DIR/.claude"
+
+    if run_jean_claude "$MACHINE_NOINIT_DIR" profile create test --yes --shell .zshrc 2>&1 | grep -q "not initialized"; then
+        print_success "Correctly detected not initialized"
+    else
+        print_failure "Did not detect not initialized state"
+    fi
+}
+
 # Run all tests
 run_all_tests() {
     print_header "Jean-Claude Integration Tests"
@@ -1008,6 +1252,21 @@ run_all_tests() {
     test_missing_settings_json
     test_git_status_ahead
     test_concurrent_modifications
+
+    print_header "Testing profile management"
+    test_profile_create
+    test_profile_symlinks
+    test_profile_symlink_content_shared
+    test_profile_independent_claude_md
+    test_profile_shell_alias
+    test_profile_list
+    test_profile_create_second
+    test_profile_create_duplicate
+    test_profile_create_invalid_name
+    test_profile_refresh
+    test_profile_delete
+    test_profile_delete_preserves_main
+    test_profile_not_initialized
 
     print_header "Testing metadata"
     test_metadata_persistence

@@ -39,9 +39,50 @@ jean-claude pull
 jean-claude status
 ```
 
+## Profiles
+
+Got multiple Claude accounts? A Teams account for work and a Max account for personal projects? Jean-Claude can manage separate profiles for each, with shared configuration kept in sync via symlinks.
+
+```bash
+# Create a profile
+jean-claude profile create work
+
+# This will:
+# 1. Create ~/.claude-work/ with symlinks to your shared config
+# 2. Add a shell alias: claude-work
+# 3. Give you a separate CLAUDE.md for work-specific instructions
+
+# List your profiles
+jean-claude profile list
+
+# Launch Claude Code with your work profile
+claude-work
+
+# Delete a profile when you're done
+jean-claude profile delete work
+
+# Re-create symlinks if something breaks
+jean-claude profile refresh work
+```
+
+### How profiles work
+
+Your main `~/.claude/` stays the source of truth. Profile directories are lightweight — they symlink back to your shared files:
+
+| Shared (symlinked)  | Profile-specific       |
+|---------------------|------------------------|
+| `settings.json`     | `CLAUDE.md`            |
+| `hooks/`            | Authentication/session |
+| `agents/`           |                        |
+| `keybindings.json`  |                        |
+
+Change a setting or add a hook in your main config, and all profiles see it immediately. Each profile gets its own `CLAUDE.md` for account-specific instructions.
+
+Profile definitions are stored in the Jean-Claude repo, so they sync across machines with `push` and `pull`.
+
 ## That's it!
 
-Four commands. No options. No complexity. Just sync.
+Simple commands. No complexity. Just sync.
 
 ## Development
 

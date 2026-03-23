@@ -15,6 +15,8 @@ export const SHARED_ITEMS = [
   { name: 'settings.json', type: 'file' as const },
   { name: 'hooks', type: 'directory' as const },
   { name: 'agents', type: 'directory' as const },
+  { name: 'skills', type: 'directory' as const },
+  { name: 'plugins', type: 'directory' as const },
   { name: 'keybindings.json', type: 'file' as const },
 ];
 

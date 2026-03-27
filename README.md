@@ -1,6 +1,6 @@
 # JEAN-CLAUDE
 
-**A companion for syncing Claude Code configuration across machines**
+**A companion for managing and syncing Claude Code configuration across machines**
 
 ## Why?
 
@@ -8,7 +8,7 @@ You've spent hours crafting the perfect `CLAUDE.md`. Your hooks are *chef's kiss
 
 Then you sit down at another machine and... nothing. Back to square one.
 
-**Jean-Claude fixes that.** It syncs your Claude Code configuration across all your machines using Git.
+**Jean-Claude fixes that.** It manages your Claude Code configuration with profiles and optional Git-based syncing across machines.
 
 ## What gets synced?
 
@@ -25,25 +25,27 @@ Then you sit down at another machine and... nothing. Back to square one.
 # Install globally
 npm install -g jean-claude
 
-# Verify install
-jean-claude --help
+# Initialize Jean-Claude
+jean-claude init
 
-# Initialize Jean-Claude and link to your config repo
-jean-claude init git@github.com:YOURUSER/jean-claude-config.git
+# (Optional) Set up Git-based syncing
+jean-claude sync setup
 
 # Make edits in ~/.claude, then push them
-jean-claude push
+jean-claude sync push
 
 # Pull the canonical config and apply it locally
-jean-claude pull
+jean-claude sync pull
 
 # Check whether this machine is in sync
-jean-claude status
+jean-claude sync status
 ```
 
 ## Profiles
 
 Got multiple Claude accounts? A Teams account for work and a Max account for personal projects? Jean-Claude can manage separate profiles for each, with shared configuration kept in sync via symlinks.
+
+Profiles work independently of syncing — you can use them without setting up Git.
 
 ```bash
 # Create a profile
@@ -80,11 +82,29 @@ Your main `~/.claude/` stays the source of truth. Profile directories are lightw
 
 Change a setting or add a hook in your main config, and all profiles see it immediately. Each profile gets its own `CLAUDE.md` for account-specific instructions.
 
-Profile definitions are stored in the Jean-Claude repo, so they sync across machines with `push` and `pull`.
+Profile definitions are stored in the Jean-Claude repo, so they sync across machines with `jean-claude sync push` and `jean-claude sync pull`.
+
+## Syncing
+
+Syncing is optional and uses Git to keep your configuration in sync across machines. Set it up at any time:
+
+```bash
+# Set up syncing with a Git remote
+jean-claude sync setup
+
+# Push your config
+jean-claude sync push
+
+# Pull on another machine
+jean-claude sync pull
+
+# Check sync status
+jean-claude sync status
+```
 
 ## That's it!
 
-Simple commands. No complexity. Just sync.
+Simple commands. No complexity. Profiles and sync.
 
 ## Development
 
@@ -119,10 +139,11 @@ Fast, isolated tests for core logic:
 #### Integration Tests
 
 End-to-end tests that simulate real usage with a local git repository and multiple machines:
-- **init command**: New repos, existing repos, already initialized, invalid remotes
-- **push command**: Initial files, no changes, modifications, new hooks
-- **pull command**: Basic sync, overwriting local changes, not initialized
-- **status command**: Clean state, uncommitted changes, not initialized
+- **init command**: New repos, existing repos, already initialized
+- **sync setup**: Linking to a Git remote
+- **sync push**: Initial files, no changes, modifications, new hooks
+- **sync pull**: Basic sync, overwriting local changes, not initialized
+- **sync status**: Clean state, uncommitted changes, not initialized
 - **Sync scenarios**: Bidirectional sync between machines
 - **Edge cases**: Empty directories, special characters, large files, multiple hooks, concurrent modifications, nested directories
 - **Metadata**: Persistence, timestamp updates

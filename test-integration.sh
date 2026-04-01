@@ -131,20 +131,21 @@ setup_test_environment() {
     TEST_DIR=$(mktemp -d -t jean-claude-test.XXXXXX)
     print_info "Created test directory: $TEST_DIR"
 
-    # Create a git repository to act as remote (non-bare for simplicity)
-    # We'll allow pushes to it by setting receive.denyCurrentBranch
+    # Create a bare git repository to act as remote
     REMOTE_REPO="$TEST_DIR/remote-repo"
-    mkdir -p "$REMOTE_REPO"
+    REMOTE_REPO_TEMP="$TEST_DIR/remote-repo-temp"
+    mkdir -p "$REMOTE_REPO_TEMP"
     (
-        cd "$REMOTE_REPO"
+        cd "$REMOTE_REPO_TEMP"
         git init > /dev/null 2>&1
         git config user.email "test@example.com"
         git config user.name "Test User"
-        git config receive.denyCurrentBranch ignore
-        echo "# Jean-Claude Config" > README.md
-        git add README.md
+        echo '{"version":"1.1.0","managedBy":"jean-claude","lastSync":null,"machineId":"test-setup","platform":"linux","claudeConfigPath":"/test"}' > meta.json
+        git add meta.json
         git commit -m "Initial commit" > /dev/null 2>&1
     )
+    git clone --bare "$REMOTE_REPO_TEMP" "$REMOTE_REPO" > /dev/null 2>&1
+    rm -rf "$REMOTE_REPO_TEMP"
 
     print_info "Created remote repository: $REMOTE_REPO"
 
@@ -184,8 +185,8 @@ run_jean_claude() {
 test_init_new_repo() {
     print_test "init command with new repository"
 
-    # Simulate user input for init command (--sync flag + repo URL via stdin)
-    echo "$REMOTE_REPO" | run_jean_claude "$MACHINE1_DIR" init --sync
+    # Initialize with --sync and --url flags (non-interactive)
+    run_jean_claude "$MACHINE1_DIR" init --sync --url "$REMOTE_REPO"
 
     assert_dir_exists "$MACHINE1_DIR/.claude/.jean-claude"
     assert_dir_exists "$MACHINE1_DIR/.claude/.jean-claude/.git"
@@ -212,7 +213,7 @@ test_init_with_existing_repo() {
     print_test "init command with existing remote repository"
 
     # Machine 2 should clone the existing repo created by machine 1
-    echo "$REMOTE_REPO" | run_jean_claude "$MACHINE2_DIR" init --sync
+    run_jean_claude "$MACHINE2_DIR" init --sync --url "$REMOTE_REPO"
 
     assert_dir_exists "$MACHINE2_DIR/.claude/.jean-claude"
     assert_file_exists "$MACHINE2_DIR/.claude/.jean-claude/meta.json"
@@ -225,7 +226,7 @@ test_init_invalid_remote() {
     mkdir -p "$INVALID_MACHINE_DIR/.claude"
 
     # Should fail with invalid remote
-    if echo "/invalid/repo/path" | run_jean_claude "$INVALID_MACHINE_DIR" init --sync 2>&1; then
+    if run_jean_claude "$INVALID_MACHINE_DIR" init --sync --url "/invalid/repo/path" 2>&1; then
         print_failure "Should have failed with invalid remote"
     else
         print_success "Correctly failed with invalid remote"
@@ -306,7 +307,7 @@ test_pull_basic() {
     print_test "pull command to sync files"
 
     # Pull on machine2 should get the files from machine1
-    run_jean_claude "$MACHINE2_DIR" sync pull
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
 
     assert_file_exists "$MACHINE2_DIR/.claude/CLAUDE.md"
     assert_file_exists "$MACHINE2_DIR/.claude/settings.json"
@@ -328,7 +329,7 @@ test_pull_overwrites_local() {
     echo "# Local changes" > "$MACHINE2_DIR/.claude/CLAUDE.md"
 
     # Pull should overwrite
-    run_jean_claude "$MACHINE2_DIR" sync pull
+    run_jean_claude "$MACHINE2_DIR" sync pull --force --force
 
     if grep -q "Updated Custom Instructions" "$MACHINE2_DIR/.claude/CLAUDE.md"; then
         print_success "Local changes overwritten by pull"
@@ -343,7 +344,7 @@ test_pull_not_initialized() {
     MACHINE4_DIR="$TEST_DIR/machine4"
     mkdir -p "$MACHINE4_DIR/.claude"
 
-    if run_jean_claude "$MACHINE4_DIR" sync pull 2>&1 | grep -q "not initialized"; then
+    if run_jean_claude "$MACHINE4_DIR" sync pull --force 2>&1 | grep -q "not initialized"; then
         print_success "Correctly detected not initialized"
     else
         print_failure "Did not detect not initialized state"
@@ -399,7 +400,7 @@ test_bidirectional_sync() {
     run_jean_claude "$MACHINE1_DIR" sync push
 
     # Pull on machine2
-    run_jean_claude "$MACHINE2_DIR" sync pull
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
 
     # Verify machine2 has the light theme
     if grep -q "light" "$MACHINE2_DIR/.claude/settings.json"; then
@@ -416,7 +417,7 @@ test_bidirectional_sync() {
     run_jean_claude "$MACHINE2_DIR" sync push
 
     # Pull on machine1
-    run_jean_claude "$MACHINE1_DIR" sync pull
+    run_jean_claude "$MACHINE1_DIR" sync pull --force
 
     # Verify machine1 has the new hook
     assert_file_exists "$MACHINE1_DIR/.claude/hooks/machine2-hook.sh"
@@ -427,7 +428,7 @@ test_three_machine_init() {
     print_test "initialize third machine from existing remote"
 
     # Machine 3 initializes from the same remote
-    echo "$REMOTE_REPO" | run_jean_claude "$MACHINE3_DIR" init --sync
+    run_jean_claude "$MACHINE3_DIR" init --sync --url "$REMOTE_REPO"
 
     assert_dir_exists "$MACHINE3_DIR/.claude/.jean-claude"
     assert_file_exists "$MACHINE3_DIR/.claude/.jean-claude/meta.json"
@@ -453,11 +454,11 @@ test_three_machine_chain_sync() {
     run_jean_claude "$MACHINE1_DIR" sync push
 
     # Machine 2 pulls and verifies
-    run_jean_claude "$MACHINE2_DIR" sync pull
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
     assert_file_exists "$MACHINE2_DIR/.claude/skills/chain-test.md"
 
     # Machine 3 pulls and verifies
-    run_jean_claude "$MACHINE3_DIR" sync pull
+    run_jean_claude "$MACHINE3_DIR" sync pull --force
     assert_file_exists "$MACHINE3_DIR/.claude/skills/chain-test.md"
 
     # Verify content is the same across all machines
@@ -477,19 +478,19 @@ test_three_machine_convergence() {
     run_jean_claude "$MACHINE1_DIR" sync push
 
     # Machine 2 pulls (gets m1's file), creates its own file, then pushes
-    run_jean_claude "$MACHINE2_DIR" sync pull
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
     echo "# File from Machine 2" > "$MACHINE2_DIR/.claude/skills/from-m2.md"
     run_jean_claude "$MACHINE2_DIR" sync push
 
     # Machine 3 pulls (gets m1 and m2's files), creates its own file, then pushes
-    run_jean_claude "$MACHINE3_DIR" sync pull
+    run_jean_claude "$MACHINE3_DIR" sync pull --force
     echo "# File from Machine 3" > "$MACHINE3_DIR/.claude/skills/from-m3.md"
     run_jean_claude "$MACHINE3_DIR" sync push
 
     # Final pull on all machines to converge
-    run_jean_claude "$MACHINE1_DIR" sync pull
-    run_jean_claude "$MACHINE2_DIR" sync pull
-    run_jean_claude "$MACHINE3_DIR" sync pull
+    run_jean_claude "$MACHINE1_DIR" sync pull --force
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
+    run_jean_claude "$MACHINE3_DIR" sync pull --force
 
     # Verify all machines have all 3 files
     local all_synced=true
@@ -516,19 +517,19 @@ test_three_machine_sequential_modifications() {
     run_jean_claude "$MACHINE1_DIR" sync push
 
     # Machine 2 pulls, modifies, and pushes
-    run_jean_claude "$MACHINE2_DIR" sync pull
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
     echo "Version 2: Modified by Machine 2" > "$MACHINE2_DIR/.claude/skills/shared-doc.md"
     run_jean_claude "$MACHINE2_DIR" sync push
 
     # Machine 3 pulls, modifies, and pushes
-    run_jean_claude "$MACHINE3_DIR" sync pull
+    run_jean_claude "$MACHINE3_DIR" sync pull --force
     echo "Version 3: Modified by Machine 3" > "$MACHINE3_DIR/.claude/skills/shared-doc.md"
     run_jean_claude "$MACHINE3_DIR" sync push
 
     # All machines pull the latest
-    run_jean_claude "$MACHINE1_DIR" sync pull
-    run_jean_claude "$MACHINE2_DIR" sync pull
-    run_jean_claude "$MACHINE3_DIR" sync pull
+    run_jean_claude "$MACHINE1_DIR" sync pull --force
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
+    run_jean_claude "$MACHINE3_DIR" sync pull --force
 
     # Verify all machines have the final version
     local all_have_v3=true
@@ -548,9 +549,9 @@ test_three_machine_concurrent_different_files() {
     print_test "concurrent modifications to different files from 3 machines"
 
     # Pull latest state first to start clean
-    run_jean_claude "$MACHINE1_DIR" sync pull
-    run_jean_claude "$MACHINE2_DIR" sync pull
-    run_jean_claude "$MACHINE3_DIR" sync pull
+    run_jean_claude "$MACHINE1_DIR" sync pull --force
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
+    run_jean_claude "$MACHINE3_DIR" sync pull --force
 
     # Machine 1 creates its file in skills and pushes
     mkdir -p "$MACHINE1_DIR/.claude/skills"
@@ -558,19 +559,19 @@ test_three_machine_concurrent_different_files() {
     run_jean_claude "$MACHINE1_DIR" sync push
 
     # Machine 2 pulls (gets m1's file), creates its file, pushes
-    run_jean_claude "$MACHINE2_DIR" sync pull
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
     echo "# Concurrent edit from M2" > "$MACHINE2_DIR/.claude/skills/concurrent-m2.md"
     run_jean_claude "$MACHINE2_DIR" sync push
 
     # Machine 3 pulls (gets m1 and m2's files), creates its file, pushes
-    run_jean_claude "$MACHINE3_DIR" sync pull
+    run_jean_claude "$MACHINE3_DIR" sync pull --force
     echo "# Concurrent edit from M3" > "$MACHINE3_DIR/.claude/skills/concurrent-m3.md"
     run_jean_claude "$MACHINE3_DIR" sync push
 
     # Final sync - all machines pull
-    run_jean_claude "$MACHINE1_DIR" sync pull
-    run_jean_claude "$MACHINE2_DIR" sync pull
-    run_jean_claude "$MACHINE3_DIR" sync pull
+    run_jean_claude "$MACHINE1_DIR" sync pull --force
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
+    run_jean_claude "$MACHINE3_DIR" sync pull --force
 
     # Check that all 3 files exist on all machines
     local all_files_present=true
@@ -598,19 +599,19 @@ test_three_machine_hooks_sync() {
     run_jean_claude "$MACHINE1_DIR" sync push
 
     # Machine 2 creates additional hooks
-    run_jean_claude "$MACHINE2_DIR" sync pull
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
     echo "#!/bin/bash\necho 'hook from m2'" > "$MACHINE2_DIR/.claude/hooks/m2-hook.sh"
     run_jean_claude "$MACHINE2_DIR" sync push
 
     # Machine 3 creates additional hooks
-    run_jean_claude "$MACHINE3_DIR" sync pull
+    run_jean_claude "$MACHINE3_DIR" sync pull --force
     echo "#!/bin/bash\necho 'hook from m3'" > "$MACHINE3_DIR/.claude/hooks/m3-hook.sh"
     run_jean_claude "$MACHINE3_DIR" sync push
 
     # Final pull on all machines
-    run_jean_claude "$MACHINE1_DIR" sync pull
-    run_jean_claude "$MACHINE2_DIR" sync pull
-    run_jean_claude "$MACHINE3_DIR" sync pull
+    run_jean_claude "$MACHINE1_DIR" sync pull --force
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
+    run_jean_claude "$MACHINE3_DIR" sync pull --force
 
     # Verify all machines have all hooks
     local all_hooks_present=true
@@ -637,20 +638,20 @@ test_three_machine_skills_sync() {
     run_jean_claude "$MACHINE1_DIR" sync push
 
     # Machine 2 creates additional skills
-    run_jean_claude "$MACHINE2_DIR" sync pull
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
     mkdir -p "$MACHINE2_DIR/.claude/skills/nested"
     echo "# Nested Skill from Machine 2" > "$MACHINE2_DIR/.claude/skills/nested/skill-m2.md"
     run_jean_claude "$MACHINE2_DIR" sync push
 
     # Machine 3 creates additional skills
-    run_jean_claude "$MACHINE3_DIR" sync pull
+    run_jean_claude "$MACHINE3_DIR" sync pull --force
     echo "# Skill from Machine 3" > "$MACHINE3_DIR/.claude/skills/skill-m3.md"
     run_jean_claude "$MACHINE3_DIR" sync push
 
     # Final pull on all machines
-    run_jean_claude "$MACHINE1_DIR" sync pull
-    run_jean_claude "$MACHINE2_DIR" sync pull
-    run_jean_claude "$MACHINE3_DIR" sync pull
+    run_jean_claude "$MACHINE1_DIR" sync pull --force
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
+    run_jean_claude "$MACHINE3_DIR" sync pull --force
 
     # Verify all machines have all skills
     local all_skills_present=true
@@ -682,10 +683,10 @@ test_three_machine_late_joiner() {
     mkdir -p "$MACHINE4_DIR/.claude"
 
     # Machine4 initializes (joining late)
-    echo "$REMOTE_REPO" | run_jean_claude "$MACHINE4_DIR" init --sync
+    run_jean_claude "$MACHINE4_DIR" init --sync --url "$REMOTE_REPO"
 
     # Pull to get all existing content
-    run_jean_claude "$MACHINE4_DIR" sync pull
+    run_jean_claude "$MACHINE4_DIR" sync pull --force
 
     # Verify machine4 has received all the content created by other machines
     # Check for files from earlier 3-machine tests (skills files from convergence test)
@@ -749,7 +750,7 @@ test_special_characters_in_files() {
     echo "# Special chars: @#$%^&*()[]{}|\\\"';:<>?/~\`" > "$MACHINE1_DIR/.claude/CLAUDE.md"
 
     run_jean_claude "$MACHINE1_DIR" sync push
-    run_jean_claude "$MACHINE2_DIR" sync pull
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
 
     if grep -q "Special chars:" "$MACHINE2_DIR/.claude/CLAUDE.md"; then
         print_success "Special characters handled correctly"
@@ -772,7 +773,7 @@ test_large_settings_file() {
     } > "$MACHINE1_DIR/.claude/settings.json"
 
     run_jean_claude "$MACHINE1_DIR" sync push
-    run_jean_claude "$MACHINE2_DIR" sync pull
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
 
     assert_file_exists "$MACHINE2_DIR/.claude/settings.json"
 
@@ -793,7 +794,7 @@ test_multiple_hooks() {
     done
 
     run_jean_claude "$MACHINE1_DIR" sync push
-    run_jean_claude "$MACHINE2_DIR" sync pull
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
 
     # Verify all hooks are present
     for i in {1..10}; do
@@ -810,7 +811,7 @@ test_nested_hooks_directory() {
     chmod +x "$MACHINE1_DIR/.claude/hooks/utils/helper.sh"
 
     run_jean_claude "$MACHINE1_DIR" sync push
-    run_jean_claude "$MACHINE2_DIR" sync pull
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
 
     if [ -f "$MACHINE2_DIR/.claude/hooks/utils/helper.sh" ]; then
         print_success "Nested hook directories supported"
@@ -832,7 +833,7 @@ test_skills_sync() {
     echo "# Advanced Skill" > "$MACHINE1_DIR/.claude/skills/advanced/complex-skill.md"
 
     run_jean_claude "$MACHINE1_DIR" sync push
-    run_jean_claude "$MACHINE2_DIR" sync pull
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
 
     # Verify skills are synced
     assert_file_exists "$MACHINE2_DIR/.claude/skills/custom-skill.md"
@@ -898,11 +899,11 @@ test_concurrent_modifications() {
 
     # Both push (machine 1 first)
     run_jean_claude "$MACHINE1_DIR" sync push
-    run_jean_claude "$MACHINE2_DIR" sync pull
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
     run_jean_claude "$MACHINE2_DIR" sync push
 
     # Machine 1 pulls
-    run_jean_claude "$MACHINE1_DIR" sync pull
+    run_jean_claude "$MACHINE1_DIR" sync pull --force
 
     # Both machines should have both changes
     if grep -q "From Machine 1" "$MACHINE1_DIR/.claude/CLAUDE.md" && \
@@ -922,7 +923,7 @@ test_metadata_persistence() {
 
     # Run some commands
     run_jean_claude "$MACHINE1_DIR" sync push
-    run_jean_claude "$MACHINE1_DIR" sync pull
+    run_jean_claude "$MACHINE1_DIR" sync pull --force
 
     # Check metadata is still the same
     current_id=$(grep -o '"machineId":"[^"]*"' "$MACHINE1_DIR/.claude/.jean-claude/meta.json" | cut -d'"' -f4)
@@ -944,7 +945,7 @@ test_last_sync_timestamp() {
     sleep 1
 
     # Run pull to update timestamp
-    run_jean_claude "$MACHINE1_DIR" sync pull
+    run_jean_claude "$MACHINE1_DIR" sync pull --force
 
     # Check updated timestamp
     updated_sync=$(grep -o '"lastSync":"[^"]*"' "$MACHINE1_DIR/.claude/.jean-claude/meta.json" | cut -d'"' -f4)

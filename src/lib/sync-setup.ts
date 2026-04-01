@@ -2,9 +2,26 @@ import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
 import { logger } from '../utils/logger.js';
-import { input } from '../utils/prompts.js';
+import { confirm, input } from '../utils/prompts.js';
 import { isGitRepo, createGit, initRepo, addRemote, testRemoteConnection, cloneRepo } from './git.js';
+import { readMetaJson } from './sync.js';
 import { JeanClaudeError, ErrorCode } from '../types/index.js';
+
+async function warnIfNotJeanClaudeRepo(dir: string): Promise<void> {
+  const meta = await readMetaJson(dir);
+  if (meta?.managedBy === 'jean-claude') return;
+
+  logger.warn('This repository does not appear to be a Jean-Claude config repo.');
+  logger.dim('It may overwrite your Claude Code configuration with unrelated files.');
+  const proceed = await confirm('Continue anyway?');
+  if (!proceed) {
+    throw new JeanClaudeError(
+      'Setup cancelled — repository validation failed',
+      ErrorCode.INVALID_CONFIG,
+      'Use a repository created by "jean-claude init" with syncing enabled.'
+    );
+  }
+}
 
 /**
  * Interactive Git remote setup flow.
@@ -73,8 +90,10 @@ export async function setupGitSync(jeanClaudeDir: string): Promise<void> {
       // Empty directory — clone directly
       try {
         await cloneRepo(repoUrl, jeanClaudeDir);
+        await warnIfNotJeanClaudeRepo(jeanClaudeDir);
         logger.success('Cloned existing config from repository');
-      } catch {
+      } catch (error) {
+        if (error instanceof JeanClaudeError) throw error;
         await initRepo(jeanClaudeDir);
         await addRemote(jeanClaudeDir, repoUrl);
         logger.success('Initialized new repository');
@@ -84,13 +103,15 @@ export async function setupGitSync(jeanClaudeDir: string): Promise<void> {
       const tmpDir = path.join(os.tmpdir(), `jean-claude-clone-${Date.now()}`);
       try {
         await cloneRepo(repoUrl, tmpDir);
+        await warnIfNotJeanClaudeRepo(tmpDir);
         // Move .git from clone into our directory
         await fs.move(path.join(tmpDir, '.git'), path.join(jeanClaudeDir, '.git'));
         // Reset to match working tree (our existing files take priority)
         const git = createGit(jeanClaudeDir);
         await git.reset(['HEAD']);
         logger.success('Cloned existing config from repository');
-      } catch {
+      } catch (error) {
+        if (error instanceof JeanClaudeError) throw error;
         // Remote is empty — just init locally
         await initRepo(jeanClaudeDir);
         await addRemote(jeanClaudeDir, repoUrl);

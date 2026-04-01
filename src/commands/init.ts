@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import fs from 'fs-extra';
 import { logger, formatPath } from '../utils/logger.js';
-import { input } from '../utils/prompts.js';
+import { confirm, input } from '../utils/prompts.js';
 import { getConfigPaths, ensureDir } from '../lib/paths.js';
 import { isGitRepo, initRepo, addRemote, testRemoteConnection, cloneRepo } from '../lib/git.js';
 import {
@@ -13,7 +13,10 @@ import { printLogo } from '../utils/logo.js';
 
 export const initCommand = new Command('init')
   .description('Initialize Jean-Claude on this machine')
-  .action(async () => {
+  .argument('[url]', 'Git remote URL for syncing')
+  .option('--sync', 'Set up Git-based syncing (skip prompt)')
+  .option('--no-sync', 'Skip syncing setup (skip prompt)')
+  .action(async (url: string | undefined, options: { sync?: boolean }) => {
     const { jeanClaudeDir, claudeConfigDir } = getConfigPaths();
 
     printLogo();
@@ -34,38 +37,52 @@ export const initCommand = new Command('init')
       );
     }
 
-    // Explain what's needed
-    console.log('');
-    logger.dim('Paste the URL of your existing config repo, or create a new');
-    logger.dim('empty repo (e.g. "my-claude-config") on GitHub/GitLab.');
-    console.log('');
-
-    // Get repository URL
-    const repoUrl = await input('Repository URL:');
-
-    // Test connection to remote
-    logger.step(1, 3, 'Testing connection to repository...');
-    const canConnect = await testRemoteConnection(repoUrl);
-    if (!canConnect) {
-      throw new JeanClaudeError(
-        'Cannot connect to repository',
-        ErrorCode.NETWORK_ERROR,
-        'Check that the URL is correct and you have access.'
-      );
+    // Determine whether to set up syncing
+    let wantSync: boolean;
+    if (url) {
+      if (options.sync === false) {
+        logger.warn('--url implies --sync; ignoring --no-sync.');
+      }
+      wantSync = true;
+    } else if (options.sync !== undefined) {
+      wantSync = options.sync;
+    } else {
+      console.log('');
+      wantSync = await confirm('Would you like to set up syncing with a Git remote?');
     }
-    logger.success('Connection successful');
 
-    // Try to clone (will work if repo has content) or init fresh (if empty)
-    logger.step(2, 3, 'Setting up local repository...');
-    try {
-      await cloneRepo(repoUrl, jeanClaudeDir);
-      logger.success('Cloned existing config from repository');
-    } catch {
-      // Repo is empty, init locally and add remote
+    if (wantSync) {
+      // Get repository URL (from argument or prompt)
+      const repoUrl = url ?? await input('Repository URL:');
+
+      // Test connection to remote
+      logger.step(1, 3, 'Testing connection to repository...');
+      const canConnect = await testRemoteConnection(repoUrl);
+      if (!canConnect) {
+        throw new JeanClaudeError(
+          'Cannot connect to repository',
+          ErrorCode.NETWORK_ERROR,
+          'Check that the URL is correct and you have access.'
+        );
+      }
+      logger.success('Connection successful');
+
+      // Try to clone (will work if repo has content) or init fresh (if empty)
+      logger.step(2, 3, 'Setting up local repository...');
+      try {
+        await cloneRepo(repoUrl, jeanClaudeDir);
+        logger.success('Cloned existing config from repository');
+      } catch {
+        // Repo is empty, init locally and add remote
+        ensureDir(jeanClaudeDir);
+        await initRepo(jeanClaudeDir);
+        await addRemote(jeanClaudeDir, repoUrl);
+        logger.success('Initialized new repository');
+      }
+    } else {
+      // Local-only init without Git syncing
       ensureDir(jeanClaudeDir);
       await initRepo(jeanClaudeDir);
-      await addRemote(jeanClaudeDir, repoUrl);
-      logger.success('Initialized new repository');
     }
 
     // Create meta.json
@@ -73,13 +90,19 @@ export const initCommand = new Command('init')
     await writeMetaJson(jeanClaudeDir, meta);
 
     // Done
-    logger.step(3, 3, 'Done!');
     console.log('');
     logger.success('Jean-Claude initialized!');
     console.log('');
     logger.dim('Next steps:');
-    logger.list([
-      'Run "jean-claude push" to push your config to Git',
-      'Run "jean-claude pull" on other machines to sync',
-    ]);
+
+    if (wantSync) {
+      logger.list([
+        'Run "jean-claude push" to push your config to Git',
+        'Run "jean-claude pull" on other machines to sync',
+      ]);
+    } else {
+      logger.list([
+        'Run "jean-claude init <url>" to set up syncing later',
+      ]);
+    }
   });

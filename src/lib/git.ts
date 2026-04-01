@@ -144,7 +144,8 @@ export async function commitAndPush(
     const remotes = await git.getRemotes();
     if (remotes.length > 0) {
       try {
-        await git.push();
+        // Use -u to set upstream on first push
+        await git.push(['-u', 'origin', 'HEAD']);
         return { committed: true, pushed: true };
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);

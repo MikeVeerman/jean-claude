@@ -120,11 +120,6 @@ export async function pull(dir: string): Promise<{ success: boolean; message: st
   }
 }
 
-export async function pullRebase(dir: string): Promise<void> {
-  const git = createGit(dir);
-  await git.pull(['--rebase']);
-}
-
 export async function commitAndPush(
   dir: string,
   message: string,
@@ -167,7 +162,8 @@ export async function commitAndPush(
       }
 
       try {
-        await git.push();
+        // Use -u to set upstream on first push
+        await git.push(['-u', 'origin', 'HEAD']);
         return { committed: true, pushed: true };
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);

@@ -16,9 +16,23 @@ export async function setupGitSync(jeanClaudeDir: string): Promise<void> {
   if (isRepo) {
     // Already a git repo — check if remote is configured
     const git = createGit(jeanClaudeDir);
-    const remotes = await git.getRemotes();
+    const remotes = await git.getRemotes(true);
     if (remotes.length > 0) {
+      const origin = remotes.find(r => r.name === 'origin');
+      const currentUrl = origin?.refs?.fetch || 'unknown';
+
       logger.success('Syncing is already configured.');
+      logger.dim(`Current remote: ${currentUrl}`);
+      console.log('');
+
+      const newUrl = (await input('New repository URL (leave empty to keep current):', '')).trim();
+
+      if (newUrl && newUrl !== currentUrl) {
+        await git.remote(['set-url', 'origin', newUrl]);
+        logger.success('Remote URL updated.');
+      } else {
+        logger.dim('Remote URL unchanged.');
+      }
       return;
     }
   }

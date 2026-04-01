@@ -108,7 +108,7 @@ export async function setupGitSync(jeanClaudeDir: string, urlArg?: string): Prom
         await warnIfNotJeanClaudeRepo(jeanClaudeDir);
         logger.success('Cloned existing config from repository');
       } catch (error) {
-        if (error instanceof JeanClaudeError) throw error;
+        if (error instanceof JeanClaudeError && error.code !== ErrorCode.CLONE_FAILED) throw error;
         await initRepo(jeanClaudeDir);
         await addRemote(jeanClaudeDir, repoUrl);
         logger.success('Initialized new repository');
@@ -126,7 +126,7 @@ export async function setupGitSync(jeanClaudeDir: string, urlArg?: string): Prom
         await git.reset(['HEAD']);
         logger.success('Cloned existing config from repository');
       } catch (error) {
-        if (error instanceof JeanClaudeError) throw error;
+        if (error instanceof JeanClaudeError && error.code !== ErrorCode.CLONE_FAILED) throw error;
         // Remote is empty — just init locally
         await initRepo(jeanClaudeDir);
         await addRemote(jeanClaudeDir, repoUrl);

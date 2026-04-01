@@ -13,8 +13,8 @@ import { printLogo } from '../utils/logo.js';
 
 export const initCommand = new Command('init')
   .description('Initialize Jean-Claude on this machine')
-  .option('--sync', 'Set up Git-based syncing (skip prompt)')
-  .option('--no-sync', 'Skip syncing setup (skip prompt)')
+  .option('--sync', 'Set up Git-based syncing without prompting')
+  .option('--no-sync', 'Skip Git sync setup without prompting')
   .action(async (options: { sync?: boolean }) => {
     const { jeanClaudeDir, claudeConfigDir } = getConfigPaths();
 
@@ -33,6 +33,12 @@ export const initCommand = new Command('init')
     ensureDir(jeanClaudeDir);
     const meta = createMetaJson(claudeConfigDir);
     await writeMetaJson(jeanClaudeDir, meta);
+
+    // Check for existing git repo (partial init recovery)
+    const gitDir = path.join(jeanClaudeDir, '.git');
+    if (fs.existsSync(gitDir)) {
+      logger.info('Found existing Git repository — reusing it.');
+    }
 
     // Ask about syncing (unless --sync or --no-sync was provided)
     let wantSync: boolean;

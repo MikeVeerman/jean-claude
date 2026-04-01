@@ -173,7 +173,7 @@ export async function commitAndPush(
         throw new JeanClaudeError(
           `Push failed: ${errMsg}`,
           ErrorCode.NETWORK_ERROR,
-          'Try running "git push" manually to see the full error.'
+          'Check your network connection and try again.'
         );
       }
     }

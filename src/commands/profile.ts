@@ -30,7 +30,7 @@ const profileCreateCommand = new Command('create')
       throw new JeanClaudeError(
         'Jean-Claude is not initialized',
         ErrorCode.NOT_INITIALIZED,
-        'Run `jean-claude init <repo-url>` first.'
+        'Run `jean-claude init` first.'
       );
     }
 

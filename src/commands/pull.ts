@@ -4,7 +4,8 @@ import { handleSyncPull } from './sync.js';
 
 const cmd = new Command('pull')
   .description('(deprecated) Use "jean-claude sync pull" instead')
-  .action(async () => {
+  .option('--force', 'Skip confirmation when discarding local changes')
+  .action(async (options: { force?: boolean }) => {
     console.error(
       chalk.yellow('Warning:') +
       ' "jean-claude pull" is deprecated. Use ' +
@@ -12,7 +13,7 @@ const cmd = new Command('pull')
       ' instead.'
     );
     console.error('');
-    await handleSyncPull();
+    await handleSyncPull(options);
   });
 
 (cmd as unknown as { _hidden: boolean })._hidden = true;

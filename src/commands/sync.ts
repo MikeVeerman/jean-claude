@@ -117,7 +117,7 @@ const syncPushCommand = new Command('push')
   .description('Commit and push config changes to Git')
   .action(handleSyncPush);
 
-export async function handleSyncPull(): Promise<void> {
+export async function handleSyncPull(options: { force?: boolean } = {}): Promise<void> {
   const { jeanClaudeDir, claudeConfigDir } = getConfigPaths();
 
   // Verify initialized
@@ -182,7 +182,8 @@ export async function handleSyncPull(): Promise<void> {
 
 const syncPullCommand = new Command('pull')
   .description('Pull latest config from Git and apply to Claude Code')
-  .action(handleSyncPull);
+  .option('--force', 'Skip confirmation when discarding local changes')
+  .action((options: { force?: boolean }) => handleSyncPull(options));
 
 export async function handleSyncStatus(): Promise<void> {
   const { jeanClaudeDir, claudeConfigDir } = getConfigPaths();

@@ -18,7 +18,8 @@ function generateCommitMessage(): string {
 
 const syncSetupCommand = new Command('setup')
   .description('Set up Git-based syncing for your configuration')
-  .action(async () => {
+  .option('--url <repo-url>', 'Repository URL (skips interactive prompt)')
+  .action(async (options: { url?: string }) => {
     const { jeanClaudeDir } = getConfigPaths();
 
     if (!fs.existsSync(jeanClaudeDir)) {
@@ -29,7 +30,7 @@ const syncSetupCommand = new Command('setup')
       );
     }
 
-    await setupGitSync(jeanClaudeDir);
+    await setupGitSync(jeanClaudeDir, options.url);
 
     console.log('');
     logger.dim('Next steps:');

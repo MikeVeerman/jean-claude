@@ -15,7 +15,8 @@ export const initCommand = new Command('init')
   .description('Initialize Jean-Claude on this machine')
   .option('--sync', 'Set up Git-based syncing without prompting')
   .option('--no-sync', 'Skip Git sync setup without prompting')
-  .action(async (options: { sync?: boolean }) => {
+  .option('--url <repo-url>', 'Repository URL for sync setup (implies --sync)')
+  .action(async (options: { sync?: boolean; url?: string }) => {
     const { jeanClaudeDir, claudeConfigDir } = getConfigPaths();
 
     printLogo();
@@ -41,8 +42,11 @@ export const initCommand = new Command('init')
     }
 
     // Ask about syncing (unless --sync or --no-sync was provided)
+    // --url implies --sync
     let wantSync: boolean;
-    if (options.sync !== undefined) {
+    if (options.url) {
+      wantSync = true;
+    } else if (options.sync !== undefined) {
       wantSync = options.sync;
     } else {
       console.log('');
@@ -50,7 +54,7 @@ export const initCommand = new Command('init')
     }
 
     if (wantSync) {
-      await setupGitSync(jeanClaudeDir);
+      await setupGitSync(jeanClaudeDir, options.url);
     }
 
     // Done

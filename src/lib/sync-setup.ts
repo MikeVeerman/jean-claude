@@ -24,10 +24,11 @@ async function warnIfNotJeanClaudeRepo(dir: string): Promise<void> {
 }
 
 /**
- * Interactive Git remote setup flow.
+ * Git remote setup flow.
  * Used by both `jean-claude init` (when user opts in) and `jean-claude sync setup`.
+ * When urlArg is provided, skips interactive prompts for the repository URL.
  */
-export async function setupGitSync(jeanClaudeDir: string): Promise<void> {
+export async function setupGitSync(jeanClaudeDir: string, urlArg?: string): Promise<void> {
   const isRepo = await isGitRepo(jeanClaudeDir);
 
   if (isRepo) {
@@ -42,7 +43,8 @@ export async function setupGitSync(jeanClaudeDir: string): Promise<void> {
       logger.dim(`Current remote: ${currentUrl}`);
       console.log('');
 
-      const newUrl = (await input('New repository URL (leave empty to keep current):', '')).trim();
+      const newUrl = urlArg?.trim()
+        || (await input('New repository URL (leave empty to keep current):', '')).trim();
 
       if (newUrl && newUrl !== currentUrl) {
         await git.remote(['set-url', 'origin', newUrl]);
@@ -54,14 +56,17 @@ export async function setupGitSync(jeanClaudeDir: string): Promise<void> {
     }
   }
 
-  // Explain what's needed
-  console.log('');
-  logger.dim('Paste the URL of your existing config repo, or create a new');
-  logger.dim('empty repo (e.g. "my-claude-config") on GitHub/GitLab.');
-  console.log('');
-
-  // Get repository URL
-  const repoUrl = await input('Repository URL:');
+  // Get repository URL — use flag if provided, otherwise prompt
+  let repoUrl: string;
+  if (urlArg) {
+    repoUrl = urlArg;
+  } else {
+    console.log('');
+    logger.dim('Paste the URL of your existing config repo, or create a new');
+    logger.dim('empty repo (e.g. "my-claude-config") on GitHub/GitLab.');
+    console.log('');
+    repoUrl = await input('Repository URL:');
+  }
 
   // Test connection to remote
   logger.step(1, 2, 'Testing connection to repository...');

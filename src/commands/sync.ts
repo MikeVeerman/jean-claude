@@ -7,6 +7,7 @@ import { getConfigPaths } from '../lib/paths.js';
 import { isGitRepo, getGitStatus, commitAndPush, pull, hasMergeConflicts, resetHard, cleanUntracked } from '../lib/git.js';
 import { syncFromClaudeConfig, syncToClaudeConfig, updateLastSync, compareFiles, readMetaJson } from '../lib/sync.js';
 import { setupGitSync } from '../lib/sync-setup.js';
+import { confirm } from '../utils/prompts.js';
 import { JeanClaudeError, ErrorCode } from '../types/index.js';
 
 function generateCommitMessage(): string {
@@ -117,7 +118,7 @@ const syncPushCommand = new Command('push')
   .description('Commit and push config changes to Git')
   .action(handleSyncPush);
 
-export async function handleSyncPull(): Promise<void> {
+export async function handleSyncPull(options: { force?: boolean } = {}): Promise<void> {
   const { jeanClaudeDir, claudeConfigDir } = getConfigPaths();
 
   // Verify initialized
@@ -145,6 +146,20 @@ export async function handleSyncPull(): Promise<void> {
       ErrorCode.NO_REMOTE,
       'Run "jean-claude sync setup" to set up a remote repository.'
     );
+  }
+
+  // Warn about uncommitted changes before discarding
+  const hasChanges = gitStatus.modified.length > 0 || gitStatus.untracked.length > 0;
+  if (hasChanges && !options.force) {
+    logger.warn('Uncommitted local changes will be discarded:');
+    gitStatus.modified.forEach(f => console.log(`  ${chalk.yellow('modified')}  ${f}`));
+    gitStatus.untracked.forEach(f => console.log(`  ${chalk.green('untracked')}  ${f}`));
+    console.log('');
+    const proceed = await confirm('Discard these changes and pull?');
+    if (!proceed) {
+      logger.dim('Pull cancelled. Commit or back up your changes first.');
+      return;
+    }
   }
 
   // Reset any local changes, clean untracked files, and pull
@@ -182,6 +197,7 @@ export async function handleSyncPull(): Promise<void> {
 
 const syncPullCommand = new Command('pull')
   .description('Pull latest config from Git and apply to Claude Code')
+  .option('--force', 'Skip confirmation when discarding local changes')
   .action(handleSyncPull);
 
 export async function handleSyncStatus(): Promise<void> {

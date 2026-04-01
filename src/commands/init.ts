@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import fs from 'fs-extra';
+import path from 'path';
 import { logger, formatPath } from '../utils/logger.js';
 import { input } from '../utils/prompts.js';
 import { getConfigPaths, ensureDir } from '../lib/paths.js';
@@ -71,6 +72,12 @@ export const initCommand = new Command('init')
     // Create meta.json
     const meta = createMetaJson(claudeConfigDir);
     await writeMetaJson(jeanClaudeDir, meta);
+
+    // Check for existing git repo (partial init recovery)
+    const gitDir = path.join(jeanClaudeDir, '.git');
+    if (fs.existsSync(gitDir)) {
+      logger.info('Found existing Git repository — reusing it.');
+    }
 
     // Done
     logger.step(3, 3, 'Done!');

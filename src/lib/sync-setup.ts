@@ -27,7 +27,7 @@ async function warnIfNotJeanClaudeRepo(dir: string): Promise<void> {
  * Interactive Git remote setup flow.
  * Used by both `jean-claude init` (when user opts in) and `jean-claude sync setup`.
  */
-export async function setupGitSync(jeanClaudeDir: string): Promise<void> {
+export async function setupGitSync(jeanClaudeDir: string, urlArg?: string): Promise<void> {
   const isRepo = await isGitRepo(jeanClaudeDir);
 
   if (isRepo) {
@@ -40,9 +40,14 @@ export async function setupGitSync(jeanClaudeDir: string): Promise<void> {
 
       logger.success('Syncing is already configured.');
       logger.dim(`Current remote: ${currentUrl}`);
-      console.log('');
 
-      const newUrl = (await input('New repository URL (leave empty to keep current):', '')).trim();
+      let newUrl: string;
+      if (urlArg) {
+        newUrl = urlArg.trim();
+      } else {
+        console.log('');
+        newUrl = (await input('New repository URL (leave empty to keep current):', '')).trim();
+      }
 
       if (newUrl && newUrl !== currentUrl) {
         await git.remote(['set-url', 'origin', newUrl]);
@@ -54,14 +59,24 @@ export async function setupGitSync(jeanClaudeDir: string): Promise<void> {
     }
   }
 
-  // Explain what's needed
-  console.log('');
-  logger.dim('Paste the URL of your existing config repo, or create a new');
-  logger.dim('empty repo (e.g. "my-claude-config") on GitHub/GitLab.');
-  console.log('');
+  let repoUrl = urlArg;
+  if (!repoUrl) {
+    // Explain what's needed
+    console.log('');
+    logger.dim('Paste the URL of your existing config repo, or create a new');
+    logger.dim('empty repo (e.g. "my-claude-config") on GitHub/GitLab.');
+    console.log('');
 
-  // Get repository URL
-  const repoUrl = await input('Repository URL:');
+    repoUrl = await input('Repository URL:');
+  }
+
+  if (!repoUrl.trim()) {
+    throw new JeanClaudeError(
+      'No repository URL provided',
+      ErrorCode.INVALID_CONFIG,
+      'Provide a Git repository URL (e.g. git@github.com:user/repo.git).'
+    );
+  }
 
   // Test connection to remote
   logger.step(1, 2, 'Testing connection to repository...');

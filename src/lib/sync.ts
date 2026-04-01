@@ -36,6 +36,11 @@ export const FILE_MAPPINGS: FileMapping[] = [
     target: 'keybindings.json',
     type: 'file',
   },
+  {
+    source: 'statusline.sh',
+    target: 'statusline.sh',
+    type: 'file',
+  },
 ];
 
 function fileHash(filePath: string): string | null {

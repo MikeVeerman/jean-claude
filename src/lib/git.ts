@@ -120,6 +120,11 @@ export async function pull(dir: string): Promise<{ success: boolean; message: st
   }
 }
 
+export async function pullRebase(dir: string): Promise<void> {
+  const git = createGit(dir);
+  await git.pull(['--rebase']);
+}
+
 export async function commitAndPush(
   dir: string,
   message: string,
@@ -144,6 +149,24 @@ export async function commitAndPush(
     const remotes = await git.getRemotes();
     if (remotes.length > 0) {
       try {
+        await git.pull(['--rebase']);
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        if (errMsg.includes('CONFLICT') || errMsg.includes('conflict')) {
+          throw new JeanClaudeError(
+            `Rebase failed due to conflicts: ${errMsg}`,
+            ErrorCode.MERGE_CONFLICT,
+            'Try running "jean-claude sync pull" to resolve conflicts.'
+          );
+        }
+        throw new JeanClaudeError(
+          `Pull --rebase failed: ${errMsg}`,
+          ErrorCode.NETWORK_ERROR,
+          'Check your network connection and try again.'
+        );
+      }
+
+      try {
         await git.push();
         return { committed: true, pushed: true };
       } catch (err) {
@@ -151,7 +174,7 @@ export async function commitAndPush(
         throw new JeanClaudeError(
           `Push failed: ${errMsg}`,
           ErrorCode.NETWORK_ERROR,
-          'Try running "git push" manually to see the full error.'
+          'Check your network connection and try again.'
         );
       }
     }

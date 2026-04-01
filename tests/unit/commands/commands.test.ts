@@ -1,8 +1,15 @@
+import fs from 'fs-extra';
+import path from 'path';
+import os from 'os';
 import { syncCommand } from '../../../src/commands/sync.js';
 import { initCommand } from '../../../src/commands/init.js';
 import { pullCommand } from '../../../src/commands/pull.js';
 import { pushCommand } from '../../../src/commands/push.js';
 import { statusCommand } from '../../../src/commands/status.js';
+import * as logger from '../../../src/utils/logger.js';
+import * as paths from '../../../src/lib/paths.js';
+import * as syncSetup from '../../../src/lib/sync-setup.js';
+import * as prompts from '../../../src/utils/prompts.js';
 
 describe('sync command group (#13)', () => {
   it('has subcommands: setup, push, pull, status', () => {
@@ -51,6 +58,75 @@ describe('init command (#20, #21, #38)', () => {
     const urlOption = initCommand.options.find(o => o.long === '--url');
     expect(urlOption).toBeDefined();
     expect(urlOption!.description).toContain('implies --sync');
+  });
+});
+
+describe('init command behavior (#20, #38)', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jean-claude-test-'));
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await fs.remove(tempDir);
+  });
+
+  it('detects existing .git directory on partial init recovery (#20)', async () => {
+    const jeanClaudeDir = path.join(tempDir, '.jean-claude');
+    await fs.ensureDir(jeanClaudeDir);
+
+    // Create a .git directory to simulate partial init
+    await fs.ensureDir(path.join(jeanClaudeDir, '.git'));
+
+    // Mock paths to use our temp dir
+    vi.spyOn(paths, 'getConfigPaths').mockReturnValue({
+      jeanClaudeDir,
+      claudeConfigDir: path.join(tempDir, '.claude'),
+      platform: 'linux',
+    });
+    vi.spyOn(paths, 'ensureDir').mockImplementation(() => {});
+
+    // Mock setupGitSync to avoid actual git operations
+    vi.spyOn(syncSetup, 'setupGitSync').mockResolvedValue();
+
+    // Mock confirm to say no to sync
+    vi.spyOn(prompts, 'confirm').mockResolvedValue(false);
+
+    // Spy on logger.info to check for the message
+    const infoSpy = vi.spyOn(logger.logger, 'info');
+
+    // Run init command action directly
+    await initCommand.parseAsync(['node', 'test', '--no-sync']);
+
+    expect(infoSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Found existing Git repository')
+    );
+  });
+
+  it('warns when --url and --no-sync are used together (#38)', async () => {
+    const jeanClaudeDir = path.join(tempDir, '.jean-claude');
+    await fs.ensureDir(jeanClaudeDir);
+
+    vi.spyOn(paths, 'getConfigPaths').mockReturnValue({
+      jeanClaudeDir,
+      claudeConfigDir: path.join(tempDir, '.claude'),
+      platform: 'linux',
+    });
+    vi.spyOn(paths, 'ensureDir').mockImplementation(() => {});
+
+    // Mock setupGitSync to avoid actual git operations
+    vi.spyOn(syncSetup, 'setupGitSync').mockResolvedValue();
+
+    // Spy on logger.warn
+    const warnSpy = vi.spyOn(logger.logger, 'warn');
+
+    await initCommand.parseAsync(['node', 'test', '--no-sync', '--url', 'https://example.com/repo.git']);
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('--url implies --sync')
+    );
   });
 });
 

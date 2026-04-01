@@ -43,6 +43,9 @@ export const initCommand = new Command('init')
 
     let wantSync: boolean;
     if (options.url) {
+      if (options.sync === false) {
+        logger.warn('--url implies --sync; ignoring --no-sync.');
+      }
       wantSync = true;
     } else if (options.sync !== undefined) {
       wantSync = options.sync;

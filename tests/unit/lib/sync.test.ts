@@ -74,7 +74,7 @@ describe('sync.ts', () => {
         expect(meta).toHaveProperty('platform');
         expect(meta).toHaveProperty('claudeConfigPath');
 
-        expect(meta.version).toBe('1.0.0');
+        expect(meta.version).toBe('1.1.0');
         expect(meta.lastSync).toBeNull();
         expect(meta.claudeConfigPath).toBe(claudeConfigPath);
         expect(meta.machineId).toContain('-'); // Format: hostname-hash

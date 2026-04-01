@@ -260,7 +260,7 @@ export async function handleSyncStatus(): Promise<void> {
 
   // File sync status
   console.log('');
-  logger.dim('Sync Status');
+  logger.dim(isRepo ? 'Sync Status' : 'File Status');
   fileComparison.forEach((c) => {
     let status: string;
     let icon: string;

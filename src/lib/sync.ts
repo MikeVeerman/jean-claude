@@ -257,7 +257,7 @@ export function createMetaJson(claudeConfigPath: string): MetaJson {
     .slice(0, 8);
 
   return {
-    version: '1.0.0',
+    version: '1.1.0',
     managedBy: 'jean-claude',
     lastSync: null,
     machineId: `${hostname}-${machineId}`,

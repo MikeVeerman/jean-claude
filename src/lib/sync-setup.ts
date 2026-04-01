@@ -41,14 +41,11 @@ export async function setupGitSync(jeanClaudeDir: string, urlArg?: string): Prom
       logger.success('Syncing is already configured.');
       logger.dim(`Current remote: ${currentUrl}`);
 
-      let newUrl: string;
-      if (urlArg) {
-        newUrl = urlArg.trim();
-      } else {
-        console.log('');
-        newUrl = (await input('New repository URL (leave empty to keep current):', '')).trim();
+      if (!urlArg) {
+        return;
       }
 
+      const newUrl = urlArg.trim();
       if (newUrl && newUrl !== currentUrl) {
         await git.remote(['set-url', 'origin', newUrl]);
         logger.success('Remote URL updated.');

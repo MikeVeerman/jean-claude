@@ -143,6 +143,27 @@ export async function commitAndPush(
   if (push) {
     const remotes = await git.getRemotes();
     if (remotes.length > 0) {
+      // Only pull --rebase if we have an upstream tracking branch
+      if (status.tracking) {
+        try {
+          await git.pull(['--rebase']);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          if (errMsg.includes('CONFLICT') || errMsg.includes('conflict')) {
+            throw new JeanClaudeError(
+              `Rebase failed due to conflicts: ${errMsg}`,
+              ErrorCode.MERGE_CONFLICT,
+              'Try running "jean-claude sync pull" to resolve conflicts.'
+            );
+          }
+          throw new JeanClaudeError(
+            `Pull --rebase failed: ${errMsg}`,
+            ErrorCode.NETWORK_ERROR,
+            'Check your network connection and try again.'
+          );
+        }
+      }
+
       try {
         // Use -u to set upstream on first push
         await git.push(['-u', 'origin', 'HEAD']);
@@ -152,7 +173,7 @@ export async function commitAndPush(
         throw new JeanClaudeError(
           `Push failed: ${errMsg}`,
           ErrorCode.NETWORK_ERROR,
-          'Try running "git push" manually to see the full error.'
+          'Check your network connection and try again.'
         );
       }
     }

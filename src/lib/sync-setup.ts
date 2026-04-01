@@ -27,27 +27,56 @@ async function warnIfNotJeanClaudeRepo(dir: string): Promise<void> {
  * Interactive Git remote setup flow.
  * Used by both `jean-claude init` (when user opts in) and `jean-claude sync setup`.
  */
-export async function setupGitSync(jeanClaudeDir: string): Promise<void> {
+export async function setupGitSync(jeanClaudeDir: string, urlArg?: string): Promise<void> {
   const isRepo = await isGitRepo(jeanClaudeDir);
 
   if (isRepo) {
     // Already a git repo — check if remote is configured
     const git = createGit(jeanClaudeDir);
-    const remotes = await git.getRemotes();
+    const remotes = await git.getRemotes(true);
     if (remotes.length > 0) {
+      const origin = remotes.find(r => r.name === 'origin');
+      const currentUrl = origin?.refs?.fetch || 'unknown';
+
       logger.success('Syncing is already configured.');
+      logger.dim(`Current remote: ${currentUrl}`);
+
+      let newUrl: string;
+      if (urlArg) {
+        newUrl = urlArg.trim();
+      } else {
+        console.log('');
+        newUrl = (await input('New repository URL (leave empty to keep current):', '')).trim();
+      }
+
+      if (newUrl && newUrl !== currentUrl) {
+        await git.remote(['set-url', 'origin', newUrl]);
+        logger.success('Remote URL updated.');
+      } else {
+        logger.dim('Remote URL unchanged.');
+      }
       return;
     }
   }
 
-  // Explain what's needed
-  console.log('');
-  logger.dim('Paste the URL of your existing config repo, or create a new');
-  logger.dim('empty repo (e.g. "my-claude-config") on GitHub/GitLab.');
-  console.log('');
+  let repoUrl = urlArg;
+  if (!repoUrl) {
+    // Explain what's needed
+    console.log('');
+    logger.dim('Paste the URL of your existing config repo, or create a new');
+    logger.dim('empty repo (e.g. "my-claude-config") on GitHub/GitLab.');
+    console.log('');
 
-  // Get repository URL
-  const repoUrl = await input('Repository URL:');
+    repoUrl = await input('Repository URL:');
+  }
+
+  if (!repoUrl.trim()) {
+    throw new JeanClaudeError(
+      'No repository URL provided',
+      ErrorCode.INVALID_CONFIG,
+      'Provide a Git repository URL (e.g. git@github.com:user/repo.git).'
+    );
+  }
 
   // Test connection to remote
   logger.step(1, 2, 'Testing connection to repository...');

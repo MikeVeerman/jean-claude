@@ -36,6 +36,11 @@ export const FILE_MAPPINGS: FileMapping[] = [
     target: 'keybindings.json',
     type: 'file',
   },
+  {
+    source: 'statusline.sh',
+    target: 'statusline.sh',
+    type: 'file',
+  },
 ];
 
 function fileHash(filePath: string): string | null {
@@ -253,6 +258,7 @@ export function createMetaJson(claudeConfigPath: string): MetaJson {
 
   return {
     version: '1.0.0',
+    managedBy: 'jean-claude',
     lastSync: null,
     machineId: `${hostname}-${machineId}`,
     platform,

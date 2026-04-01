@@ -47,6 +47,18 @@ describe('sync.ts', () => {
       });
     });
 
+    it('should include a statusline.sh mapping in results', () => {
+      const sourceDir = path.join(tempDir, 'source');
+      const targetDir = path.join(tempDir, 'target');
+
+      const results = compareFiles(sourceDir, targetDir);
+
+      const statuslineResult = results.find(r => r.mapping.source === 'statusline.sh');
+      expect(statuslineResult).toBeDefined();
+      expect(statuslineResult!.mapping.target).toBe('statusline.sh');
+      expect(statuslineResult!.mapping.type).toBe('file');
+    });
+
     it('should detect when files are missing in both locations', () => {
       const sourceDir = path.join(tempDir, 'source');
       const targetDir = path.join(tempDir, 'target');
@@ -87,6 +99,13 @@ describe('sync.ts', () => {
 
         // Should be the same since hostname and platform are the same
         expect(meta1.machineId).toBe(meta2.machineId);
+      });
+
+      it('should include managedBy field set to jean-claude', () => {
+        const meta = createMetaJson('/test/path');
+
+        expect(meta).toHaveProperty('managedBy');
+        expect(meta.managedBy).toBe('jean-claude');
       });
     });
 
@@ -157,6 +176,25 @@ describe('sync.ts', () => {
       expect(claudeMd).toBe('# Instructions');
     });
 
+    it('should copy statusline.sh from Claude config', async () => {
+      const claudeDir = path.join(tempDir, '.claude');
+      const jeanClaudeDir = path.join(tempDir, '.jean-claude');
+
+      await fs.ensureDir(claudeDir);
+      await fs.ensureDir(jeanClaudeDir);
+
+      await fs.writeFile(path.join(claudeDir, 'statusline.sh'), '#!/bin/bash\necho "status"');
+
+      const results = await syncFromClaudeConfig(claudeDir, jeanClaudeDir);
+
+      expect(await fs.pathExists(path.join(jeanClaudeDir, 'statusline.sh'))).toBe(true);
+      const content = await fs.readFile(path.join(jeanClaudeDir, 'statusline.sh'), 'utf-8');
+      expect(content).toBe('#!/bin/bash\necho "status"');
+
+      const statuslineResult = results.find(r => r.file === 'statusline.sh');
+      expect(statuslineResult).toBeDefined();
+    });
+
     it('should sync hooks directory', async () => {
       const claudeDir = path.join(tempDir, '.claude');
       const jeanClaudeDir = path.join(tempDir, '.jean-claude');
@@ -190,6 +228,25 @@ describe('sync.ts', () => {
 
       const claudeMd = await fs.readFile(path.join(claudeDir, 'CLAUDE.md'), 'utf-8');
       expect(claudeMd).toBe('# Remote Instructions');
+    });
+
+    it('should copy statusline.sh to Claude config', async () => {
+      const claudeDir = path.join(tempDir, '.claude');
+      const jeanClaudeDir = path.join(tempDir, '.jean-claude');
+
+      await fs.ensureDir(claudeDir);
+      await fs.ensureDir(jeanClaudeDir);
+
+      await fs.writeFile(path.join(jeanClaudeDir, 'statusline.sh'), '#!/bin/bash\necho "status"');
+
+      const results = await syncToClaudeConfig(jeanClaudeDir, claudeDir);
+
+      expect(await fs.pathExists(path.join(claudeDir, 'statusline.sh'))).toBe(true);
+      const content = await fs.readFile(path.join(claudeDir, 'statusline.sh'), 'utf-8');
+      expect(content).toBe('#!/bin/bash\necho "status"');
+
+      const statuslineResult = results.find(r => r.file === 'statusline.sh');
+      expect(statuslineResult).toBeDefined();
     });
 
     it('should overwrite existing files', async () => {

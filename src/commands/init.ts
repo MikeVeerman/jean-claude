@@ -13,8 +13,8 @@ import { printLogo } from '../utils/logo.js';
 
 export const initCommand = new Command('init')
   .description('Initialize Jean-Claude on this machine')
-  .option('--sync', 'Set up Git-based syncing (skip prompt)')
-  .option('--no-sync', 'Skip syncing setup (skip prompt)')
+  .option('--sync', 'Set up Git-based syncing without prompting')
+  .option('--no-sync', 'Skip Git sync setup without prompting')
   .action(async (options: { sync?: boolean }) => {
     const { jeanClaudeDir, claudeConfigDir } = getConfigPaths();
 

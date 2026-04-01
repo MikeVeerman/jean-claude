@@ -13,9 +13,10 @@ import { printLogo } from '../utils/logo.js';
 
 export const initCommand = new Command('init')
   .description('Initialize Jean-Claude on this machine')
-  .option('--sync', 'Set up Git-based syncing (skip prompt)')
-  .option('--no-sync', 'Skip syncing setup (skip prompt)')
-  .action(async (options: { sync?: boolean }) => {
+  .option('--sync', 'Set up Git-based syncing without prompting')
+  .option('--no-sync', 'Skip Git sync setup without prompting')
+  .option('--url <repo-url>', 'Repository URL for sync setup (implies --sync)')
+  .action(async (options: { sync?: boolean; url?: string }) => {
     const { jeanClaudeDir, claudeConfigDir } = getConfigPaths();
 
     printLogo();
@@ -34,9 +35,16 @@ export const initCommand = new Command('init')
     const meta = createMetaJson(claudeConfigDir);
     await writeMetaJson(jeanClaudeDir, meta);
 
-    // Ask about syncing (unless --sync or --no-sync was provided)
+    // Check for existing git repo (partial init recovery)
+    const gitDir = path.join(jeanClaudeDir, '.git');
+    if (fs.existsSync(gitDir)) {
+      logger.info('Found existing Git repository — reusing it.');
+    }
+
     let wantSync: boolean;
-    if (options.sync !== undefined) {
+    if (options.url) {
+      wantSync = true;
+    } else if (options.sync !== undefined) {
       wantSync = options.sync;
     } else {
       console.log('');
@@ -44,7 +52,7 @@ export const initCommand = new Command('init')
     }
 
     if (wantSync) {
-      await setupGitSync(jeanClaudeDir);
+      await setupGitSync(jeanClaudeDir, options.url);
     }
 
     // Done

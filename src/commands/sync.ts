@@ -199,7 +199,7 @@ export async function handleSyncPull(options: { force?: boolean } = {}): Promise
 const syncPullCommand = new Command('pull')
   .description('Pull latest config from Git and apply to Claude Code')
   .option('--force', 'Skip confirmation when discarding local changes')
-  .action(handleSyncPull);
+  .action((options: { force?: boolean }) => handleSyncPull(options));
 
 export async function handleSyncStatus(): Promise<void> {
   const { jeanClaudeDir, claudeConfigDir } = getConfigPaths();

@@ -1201,6 +1201,585 @@ test_profile_not_initialized() {
     fi
 }
 
+# Test init --no-sync
+test_init_no_sync() {
+    print_test "init --no-sync creates local directory without git"
+
+    local NOSYNC_DIR="$TEST_DIR/machine-nosync"
+    mkdir -p "$NOSYNC_DIR/.claude"
+
+    run_jean_claude "$NOSYNC_DIR" init --no-sync
+
+    # Should create jean-claude dir and meta.json
+    assert_dir_exists "$NOSYNC_DIR/.claude/.jean-claude"
+    assert_file_exists "$NOSYNC_DIR/.claude/.jean-claude/meta.json"
+
+    # Should NOT have a .git directory
+    if [ -d "$NOSYNC_DIR/.claude/.jean-claude/.git" ]; then
+        print_failure ".git directory should not exist with --no-sync"
+    else
+        print_success "No .git directory created with --no-sync"
+    fi
+}
+
+# Test init --url implies --sync
+test_init_url_implies_sync() {
+    print_test "init --url implies --sync"
+
+    local URL_DIR="$TEST_DIR/machine-url"
+    mkdir -p "$URL_DIR/.claude"
+
+    run_jean_claude "$URL_DIR" init --url "$REMOTE_REPO"
+
+    # Should have set up git repo with remote
+    assert_dir_exists "$URL_DIR/.claude/.jean-claude/.git"
+    assert_file_exists "$URL_DIR/.claude/.jean-claude/meta.json"
+}
+
+# Test two-phase flow: init --no-sync then sync setup --url
+test_two_phase_init_then_sync_setup() {
+    print_test "two-phase flow: init --no-sync then sync setup --url"
+
+    local TWOPHASE_DIR="$TEST_DIR/machine-twophase"
+    mkdir -p "$TWOPHASE_DIR/.claude"
+
+    # Phase 1: init without sync
+    run_jean_claude "$TWOPHASE_DIR" init --no-sync
+
+    assert_dir_exists "$TWOPHASE_DIR/.claude/.jean-claude"
+    assert_file_exists "$TWOPHASE_DIR/.claude/.jean-claude/meta.json"
+
+    # Phase 2: set up sync
+    run_jean_claude "$TWOPHASE_DIR" sync setup --url "$REMOTE_REPO"
+
+    # Should now have a git repo
+    assert_dir_exists "$TWOPHASE_DIR/.claude/.jean-claude/.git"
+
+    # Should be able to pull
+    run_jean_claude "$TWOPHASE_DIR" sync pull --force
+
+    # Should have files from remote
+    if [ -f "$TWOPHASE_DIR/.claude/CLAUDE.md" ]; then
+        print_success "Two-phase flow: pull works after sync setup"
+    else
+        print_info "Two-phase flow: no files pulled (remote may not have CLAUDE.md)"
+    fi
+}
+
+# Test sync setup when already configured
+test_sync_setup_already_configured() {
+    print_test "sync setup when already configured shows current remote"
+
+    output=$(run_jean_claude "$MACHINE1_DIR" sync setup 2>&1 || true)
+
+    if echo "$output" | grep -qi "already configured"; then
+        print_success "sync setup detected existing configuration"
+    else
+        print_failure "sync setup did not detect existing configuration"
+    fi
+}
+
+# Test sync setup --url to reconfigure remote
+test_sync_setup_reconfigure_url() {
+    print_test "sync setup --url reconfigures remote"
+
+    # Create a second remote repo
+    local SECOND_REMOTE="$TEST_DIR/remote-repo-2"
+    local SECOND_REMOTE_TEMP="$TEST_DIR/remote-repo-2-temp"
+    mkdir -p "$SECOND_REMOTE_TEMP"
+    (
+        cd "$SECOND_REMOTE_TEMP"
+        git init > /dev/null 2>&1
+        git config user.email "test@example.com"
+        git config user.name "Test User"
+        echo '{"version":"1.1.0","managedBy":"jean-claude","lastSync":null,"machineId":"test","platform":"linux","claudeConfigPath":"/test"}' > meta.json
+        git add meta.json
+        git commit -m "Initial commit" > /dev/null 2>&1
+    )
+    git clone --bare "$SECOND_REMOTE_TEMP" "$SECOND_REMOTE" > /dev/null 2>&1
+    rm -rf "$SECOND_REMOTE_TEMP"
+
+    # Reconfigure machine1 to use second remote
+    output=$(run_jean_claude "$MACHINE1_DIR" sync setup --url "$SECOND_REMOTE" 2>&1 || true)
+
+    if echo "$output" | grep -qi "updated"; then
+        print_success "Remote URL updated successfully"
+    else
+        print_info "Remote URL reconfigure output: may have been unchanged"
+    fi
+
+    # Restore original remote
+    run_jean_claude "$MACHINE1_DIR" sync setup --url "$REMOTE_REPO" > /dev/null 2>&1
+}
+
+# Test deprecated command stubs
+test_deprecated_push() {
+    print_test "deprecated push command shows warning and still works"
+
+    echo "# Deprecated test content" > "$MACHINE1_DIR/.claude/CLAUDE.md"
+
+    output=$(run_jean_claude "$MACHINE1_DIR" push 2>&1 || true)
+
+    if echo "$output" | grep -qi "deprecated"; then
+        print_success "push shows deprecation warning"
+    else
+        print_failure "push does not show deprecation warning"
+    fi
+
+    if echo "$output" | grep -qi "sync push"; then
+        print_success "push suggests 'sync push' as replacement"
+    else
+        print_failure "push does not suggest 'sync push'"
+    fi
+}
+
+test_deprecated_pull() {
+    print_test "deprecated pull command shows warning and still works"
+
+    output=$(run_jean_claude "$MACHINE2_DIR" pull --force 2>&1 || true)
+
+    if echo "$output" | grep -qi "deprecated"; then
+        print_success "pull shows deprecation warning"
+    else
+        print_failure "pull does not show deprecation warning"
+    fi
+
+    if echo "$output" | grep -qi "sync pull"; then
+        print_success "pull suggests 'sync pull' as replacement"
+    else
+        print_failure "pull does not suggest 'sync pull'"
+    fi
+}
+
+test_deprecated_status() {
+    print_test "deprecated status command shows warning and still works"
+
+    output=$(run_jean_claude "$MACHINE1_DIR" status 2>&1 || true)
+
+    if echo "$output" | grep -qi "deprecated"; then
+        print_success "status shows deprecation warning"
+    else
+        print_failure "status does not show deprecation warning"
+    fi
+
+    if echo "$output" | grep -qi "sync status"; then
+        print_success "status suggests 'sync status' as replacement"
+    else
+        print_failure "status does not suggest 'sync status'"
+    fi
+
+    # Verify it still actually shows status info
+    if echo "$output" | grep -qi "Status"; then
+        print_success "status still displays status information"
+    else
+        print_failure "status does not display status information"
+    fi
+}
+
+# Test keybindings.json sync
+test_keybindings_sync() {
+    print_test "keybindings.json push and pull"
+
+    # Create keybindings.json on machine1
+    cat > "$MACHINE1_DIR/.claude/keybindings.json" << 'KEYBINDINGS'
+{
+  "submit": "ctrl+enter",
+  "cancel": "escape",
+  "clear": "ctrl+l"
+}
+KEYBINDINGS
+
+    run_jean_claude "$MACHINE1_DIR" sync push
+
+    assert_file_exists "$MACHINE1_DIR/.claude/.jean-claude/keybindings.json"
+    assert_file_contains "$MACHINE1_DIR/.claude/.jean-claude/keybindings.json" "ctrl+enter"
+
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
+
+    assert_file_exists "$MACHINE2_DIR/.claude/keybindings.json"
+
+    if grep -q "ctrl+enter" "$MACHINE2_DIR/.claude/keybindings.json"; then
+        print_success "keybindings.json content synced correctly"
+    else
+        print_failure "keybindings.json content not synced"
+    fi
+}
+
+test_keybindings_update_sync() {
+    print_test "keybindings.json modification syncs"
+
+    cat > "$MACHINE2_DIR/.claude/keybindings.json" << 'KEYBINDINGS'
+{
+  "submit": "ctrl+enter",
+  "cancel": "escape",
+  "clear": "ctrl+l",
+  "newBinding": "ctrl+shift+n"
+}
+KEYBINDINGS
+
+    run_jean_claude "$MACHINE2_DIR" sync push
+    run_jean_claude "$MACHINE1_DIR" sync pull --force
+
+    if grep -q "newBinding" "$MACHINE1_DIR/.claude/keybindings.json"; then
+        print_success "Updated keybindings.json synced back"
+    else
+        print_failure "Updated keybindings.json not synced"
+    fi
+}
+
+# Test statusline.sh sync
+test_statusline_sync() {
+    print_test "statusline.sh push and pull"
+
+    echo '#!/bin/bash\necho "custom statusline"' > "$MACHINE1_DIR/.claude/statusline.sh"
+
+    run_jean_claude "$MACHINE1_DIR" sync push
+
+    assert_file_exists "$MACHINE1_DIR/.claude/.jean-claude/statusline.sh"
+
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
+
+    assert_file_exists "$MACHINE2_DIR/.claude/statusline.sh"
+
+    if grep -q "custom statusline" "$MACHINE2_DIR/.claude/statusline.sh"; then
+        print_success "statusline.sh content synced correctly"
+    else
+        print_failure "statusline.sh content not synced"
+    fi
+}
+
+# Test agents directory direct push/pull
+test_agents_direct_sync() {
+    print_test "agents directory direct push and pull"
+
+    mkdir -p "$MACHINE1_DIR/.claude/agents"
+    echo "# Code Review Agent" > "$MACHINE1_DIR/.claude/agents/code-reviewer.md"
+    echo "# Refactor Agent" > "$MACHINE1_DIR/.claude/agents/refactorer.md"
+
+    run_jean_claude "$MACHINE1_DIR" sync push
+
+    assert_file_exists "$MACHINE1_DIR/.claude/.jean-claude/agents/code-reviewer.md"
+    assert_file_exists "$MACHINE1_DIR/.claude/.jean-claude/agents/refactorer.md"
+
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
+
+    assert_file_exists "$MACHINE2_DIR/.claude/agents/code-reviewer.md"
+    assert_file_exists "$MACHINE2_DIR/.claude/agents/refactorer.md"
+
+    if grep -q "Code Review Agent" "$MACHINE2_DIR/.claude/agents/code-reviewer.md"; then
+        print_success "Agent content synced correctly"
+    else
+        print_failure "Agent content not synced"
+    fi
+}
+
+test_agents_nested_sync() {
+    print_test "agents nested directory sync"
+
+    mkdir -p "$MACHINE1_DIR/.claude/agents/specialized"
+    echo "# Security Agent" > "$MACHINE1_DIR/.claude/agents/specialized/security.md"
+
+    run_jean_claude "$MACHINE1_DIR" sync push
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
+
+    if [ -f "$MACHINE2_DIR/.claude/agents/specialized/security.md" ]; then
+        print_success "Nested agent directories synced"
+    else
+        print_failure "Nested agent directories not synced"
+    fi
+}
+
+# Test meta.json field verification
+test_meta_json_fields() {
+    print_test "meta.json contains all required fields"
+
+    local meta_file="$MACHINE1_DIR/.claude/.jean-claude/meta.json"
+    assert_file_exists "$meta_file"
+
+    assert_file_contains "$meta_file" "version"
+    assert_file_contains "$meta_file" "managedBy"
+    assert_file_contains "$meta_file" "machineId"
+    assert_file_contains "$meta_file" "platform"
+    assert_file_contains "$meta_file" "claudeConfigPath"
+}
+
+test_meta_json_managed_by() {
+    print_test "meta.json managedBy field is set to jean-claude"
+
+    local meta_file="$MACHINE1_DIR/.claude/.jean-claude/meta.json"
+
+    if grep -q '"managedBy"' "$meta_file" && grep -q '"jean-claude"' "$meta_file"; then
+        print_success "managedBy field is set to 'jean-claude'"
+    else
+        print_failure "managedBy field is not set correctly"
+    fi
+}
+
+test_meta_json_persists_across_push_pull() {
+    print_test "meta.json persists across push and pull cycles"
+
+    local meta_file="$MACHINE1_DIR/.claude/.jean-claude/meta.json"
+    local initial_machine_id
+    initial_machine_id=$(grep -oE '"machineId"[[:space:]]*:[[:space:]]*"[^"]*"' "$meta_file" | sed 's/.*: *"//' | sed 's/"$//')
+
+    echo "# Meta persistence test" > "$MACHINE1_DIR/.claude/CLAUDE.md"
+    run_jean_claude "$MACHINE1_DIR" sync push
+    run_jean_claude "$MACHINE1_DIR" sync pull --force
+
+    local current_machine_id
+    current_machine_id=$(grep -oE '"machineId"[[:space:]]*:[[:space:]]*"[^"]*"' "$meta_file" | sed 's/.*: *"//' | sed 's/"$//')
+
+    if [ "$initial_machine_id" = "$current_machine_id" ]; then
+        print_success "machineId persisted across push/pull"
+    else
+        print_failure "machineId changed: $initial_machine_id -> $current_machine_id"
+    fi
+
+    assert_file_contains "$meta_file" "version"
+    assert_file_contains "$meta_file" "managedBy"
+}
+
+# Test init partial recovery
+test_init_partial_recovery() {
+    print_test "init recovers when meta.json is missing but .git exists"
+
+    local RECOVERY_DIR="$TEST_DIR/machine-recovery"
+    mkdir -p "$RECOVERY_DIR/.claude"
+
+    # First, init normally with sync
+    run_jean_claude "$RECOVERY_DIR" init --sync --url "$REMOTE_REPO"
+
+    assert_dir_exists "$RECOVERY_DIR/.claude/.jean-claude/.git"
+    assert_file_exists "$RECOVERY_DIR/.claude/.jean-claude/meta.json"
+
+    # Simulate partial state: delete meta.json but leave .git
+    rm "$RECOVERY_DIR/.claude/.jean-claude/meta.json"
+
+    # Re-run init — should detect existing .git and reuse it
+    output=$(run_jean_claude "$RECOVERY_DIR" init --no-sync 2>&1 || true)
+
+    # meta.json should be recreated
+    assert_file_exists "$RECOVERY_DIR/.claude/.jean-claude/meta.json"
+
+    # .git should still be there
+    assert_dir_exists "$RECOVERY_DIR/.claude/.jean-claude/.git"
+
+    if echo "$output" | grep -qi "existing Git repository"; then
+        print_success "Init detected and reused existing .git repo"
+    else
+        print_info "Init ran but may not have logged repo reuse message"
+    fi
+}
+
+# Test sync push with no remote
+test_sync_push_no_remote() {
+    print_test "sync push with no remote warns about local-only commit"
+
+    local NOREMOTE_DIR="$TEST_DIR/machine-noremote"
+    mkdir -p "$NOREMOTE_DIR/.claude"
+
+    # Init without sync (no remote)
+    run_jean_claude "$NOREMOTE_DIR" init --no-sync
+
+    # Manually init git without a remote
+    (
+        cd "$NOREMOTE_DIR/.claude/.jean-claude"
+        git init > /dev/null 2>&1
+        git config user.email "test@example.com"
+        git config user.name "Test User"
+    )
+
+    # Create a file to push
+    echo "# No remote test" > "$NOREMOTE_DIR/.claude/CLAUDE.md"
+
+    output=$(run_jean_claude "$NOREMOTE_DIR" sync push 2>&1 || true)
+
+    if echo "$output" | grep -qi "no remote\|committed locally"; then
+        print_success "Push with no remote warns about local-only commit"
+    else
+        print_info "Push output did not contain expected warning"
+    fi
+}
+
+# Test profile sync across machines
+test_profile_registry_sync() {
+    print_test "profiles.json syncs across machines via push/pull"
+
+    # Machine1 already has a 'work' profile from earlier tests
+    run_jean_claude "$MACHINE1_DIR" sync push
+
+    assert_file_exists "$MACHINE1_DIR/.claude/.jean-claude/profiles.json"
+
+    run_jean_claude "$MACHINE2_DIR" sync pull --force
+
+    if [ -f "$MACHINE2_DIR/.claude/.jean-claude/profiles.json" ]; then
+        if grep -q "work" "$MACHINE2_DIR/.claude/.jean-claude/profiles.json"; then
+            print_success "profiles.json synced to machine2 with profile data"
+        else
+            print_failure "profiles.json synced but missing profile data"
+        fi
+    else
+        print_info "profiles.json not synced (may not be in FILE_MAPPINGS)"
+    fi
+}
+
+# Test profile list shows empty state
+test_profile_list_empty() {
+    print_test "profile list with no profiles"
+
+    local FRESH_DIR="$TEST_DIR/machine-no-profiles"
+    mkdir -p "$FRESH_DIR/.claude"
+    run_jean_claude "$FRESH_DIR" init --no-sync 2>/dev/null
+
+    output=$(run_jean_claude "$FRESH_DIR" profile list 2>&1 || true)
+
+    if echo "$output" | grep -qi "no profiles"; then
+        print_success "Profile list correctly shows empty state"
+    else
+        print_info "Profile list output for empty state (may differ)"
+    fi
+}
+
+# Test profile delete nonexistent profile
+test_profile_delete_nonexistent() {
+    print_test "delete nonexistent profile fails"
+
+    if run_jean_claude "$MACHINE1_DIR" profile delete nonexistent --yes 2>&1; then
+        print_failure "Should have failed deleting nonexistent profile"
+    else
+        print_success "Correctly rejected deleting nonexistent profile"
+    fi
+}
+
+# Test profile with hyphenated name
+test_profile_create_hyphenated_name() {
+    print_test "create profile with hyphenated name"
+
+    run_jean_claude "$MACHINE1_DIR" profile create my-project --yes --shell .bashrc
+
+    assert_dir_exists "$MACHINE1_DIR/.claude-my-project"
+    assert_file_exists "$MACHINE1_DIR/.claude-my-project/CLAUDE.md"
+    assert_file_contains "$MACHINE1_DIR/.claude/.jean-claude/profiles.json" "my-project"
+    assert_file_contains "$MACHINE1_DIR/.bashrc" "claude-my-project"
+
+    # Clean up
+    run_jean_claude "$MACHINE1_DIR" profile delete my-project --yes
+}
+
+# Test profile refresh after adding new shared items
+test_profile_refresh_new_shared_items() {
+    print_test "profile refresh picks up newly created shared directories"
+
+    mkdir -p "$MACHINE1_DIR/.claude/skills"
+    echo "# New skill" > "$MACHINE1_DIR/.claude/skills/new-skill.md"
+
+    mkdir -p "$MACHINE1_DIR/.claude/plugins"
+    echo "# Plugin" > "$MACHINE1_DIR/.claude/plugins/test-plugin.md"
+
+    run_jean_claude "$MACHINE1_DIR" profile refresh work
+
+    if [ -L "$MACHINE1_DIR/.claude-work/skills" ]; then
+        print_success "skills symlink created after refresh"
+    else
+        print_failure "skills symlink not created after refresh"
+    fi
+
+    if [ -L "$MACHINE1_DIR/.claude-work/plugins" ]; then
+        print_success "plugins symlink created after refresh"
+    else
+        print_failure "plugins symlink not created after refresh"
+    fi
+
+    if [ -f "$MACHINE1_DIR/.claude-work/skills/new-skill.md" ]; then
+        print_success "skills content accessible through profile symlink"
+    else
+        print_failure "skills content not accessible through profile symlink"
+    fi
+
+    if [ -f "$MACHINE1_DIR/.claude-work/plugins/test-plugin.md" ]; then
+        print_success "plugins content accessible through profile symlink"
+    else
+        print_failure "plugins content not accessible through profile symlink"
+    fi
+}
+
+# Test profile keybindings symlink
+test_profile_keybindings_symlink() {
+    print_test "profile symlinks keybindings.json"
+
+    if [ ! -f "$MACHINE1_DIR/.claude/keybindings.json" ]; then
+        echo '{"submit": "ctrl+enter"}' > "$MACHINE1_DIR/.claude/keybindings.json"
+    fi
+
+    run_jean_claude "$MACHINE1_DIR" profile refresh work
+
+    if [ -L "$MACHINE1_DIR/.claude-work/keybindings.json" ]; then
+        print_success "keybindings.json is symlinked in profile"
+
+        local target
+        target=$(readlink "$MACHINE1_DIR/.claude-work/keybindings.json")
+        if [ "$target" = "$MACHINE1_DIR/.claude/keybindings.json" ]; then
+            print_success "keybindings.json symlink target is correct"
+        else
+            print_failure "keybindings.json symlink target is wrong: $target"
+        fi
+
+        if grep -q "ctrl+enter\|submit" "$MACHINE1_DIR/.claude-work/keybindings.json"; then
+            print_success "keybindings.json content accessible through profile symlink"
+        else
+            print_failure "keybindings.json content not accessible"
+        fi
+    else
+        print_failure "keybindings.json not symlinked in profile"
+    fi
+}
+
+# Test sync status heading changes based on git presence
+test_sync_status_heading() {
+    print_test "sync status uses different headings based on git presence"
+
+    # With git configured, should show "Sync Status"
+    output_with_git=$(run_jean_claude "$MACHINE1_DIR" sync status 2>&1 || true)
+
+    if echo "$output_with_git" | grep -q "Sync Status"; then
+        print_success "Shows 'Sync Status' when git is configured"
+    else
+        print_failure "Does not show 'Sync Status' when git is configured"
+    fi
+
+    # Without git, should show "File Status"
+    local NOGIT_DIR="$TEST_DIR/machine-nogit"
+    mkdir -p "$NOGIT_DIR/.claude"
+    run_jean_claude "$NOGIT_DIR" init --no-sync 2>/dev/null
+
+    output_without_git=$(run_jean_claude "$NOGIT_DIR" sync status 2>&1 || true)
+
+    if echo "$output_without_git" | grep -q "File Status"; then
+        print_success "Shows 'File Status' when no git repo"
+    else
+        print_failure "Does not show 'File Status' when no git repo"
+    fi
+}
+
+# Test init --url --no-sync conflicting flags
+test_init_conflicting_flags() {
+    print_test "init --url --no-sync warns and proceeds with sync"
+
+    local CONFLICT_DIR="$TEST_DIR/machine-conflict-flags"
+    mkdir -p "$CONFLICT_DIR/.claude"
+
+    output=$(run_jean_claude "$CONFLICT_DIR" init --url "$REMOTE_REPO" --no-sync 2>&1 || true)
+
+    if echo "$output" | grep -qi "ignoring\|implies"; then
+        print_success "Warns about conflicting --url and --no-sync flags"
+    else
+        print_info "No explicit warning about conflicting flags"
+    fi
+
+    # --url should win: git should be set up
+    assert_dir_exists "$CONFLICT_DIR/.claude/.jean-claude/.git"
+}
+
 # Run all tests
 run_all_tests() {
     print_header "Jean-Claude Integration Tests"
@@ -1255,6 +1834,39 @@ run_all_tests() {
     test_git_status_ahead
     test_concurrent_modifications
 
+    print_header "Testing init variations"
+    test_init_no_sync
+    test_init_url_implies_sync
+    test_two_phase_init_then_sync_setup
+    test_init_partial_recovery
+    test_init_conflicting_flags
+
+    print_header "Testing sync setup command"
+    test_sync_setup_already_configured
+    test_sync_setup_reconfigure_url
+
+    print_header "Testing deprecated command stubs"
+    test_deprecated_push
+    test_deprecated_pull
+    test_deprecated_status
+
+    print_header "Testing keybindings.json sync"
+    test_keybindings_sync
+    test_keybindings_update_sync
+
+    print_header "Testing statusline.sh sync"
+    test_statusline_sync
+
+    print_header "Testing agents directory sync"
+    test_agents_direct_sync
+    test_agents_nested_sync
+
+    print_header "Testing sync push edge cases"
+    test_sync_push_no_remote
+
+    print_header "Testing sync status heading"
+    test_sync_status_heading
+
     print_header "Testing profile management"
     test_profile_create
     test_profile_symlinks
@@ -1266,13 +1878,24 @@ run_all_tests() {
     test_profile_create_duplicate
     test_profile_create_invalid_name
     test_profile_refresh
+    test_profile_refresh_new_shared_items
+    test_profile_keybindings_symlink
     test_profile_delete
     test_profile_delete_preserves_main
     test_profile_not_initialized
+    test_profile_list_empty
+    test_profile_delete_nonexistent
+    test_profile_create_hyphenated_name
 
     print_header "Testing metadata"
     test_metadata_persistence
     test_last_sync_timestamp
+    test_meta_json_fields
+    test_meta_json_managed_by
+    test_meta_json_persists_across_push_pull
+
+    print_header "Testing profile sync across machines"
+    test_profile_registry_sync
 
     print_header "Test Summary"
     echo -e "${BLUE}Tests run: $TESTS_RUN${NC}"

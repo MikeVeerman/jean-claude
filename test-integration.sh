@@ -1056,6 +1056,121 @@ test_profile_independent_claude_md() {
     fi
 }
 
+test_profile_share_claude_md() {
+    print_test "profile create with --share-claude-md symlinks CLAUDE.md"
+
+    # Ensure main config has a CLAUDE.md
+    echo "# Shared global instructions" > "$MACHINE1_DIR/.claude/CLAUDE.md"
+
+    # Create a profile with --share-claude-md
+    run_jean_claude "$MACHINE1_DIR" profile create shared-md --yes --shell .bashrc --share-claude-md
+
+    assert_dir_exists "$MACHINE1_DIR/.claude-shared-md"
+
+    # Verify CLAUDE.md is a symlink
+    if [ -L "$MACHINE1_DIR/.claude-shared-md/CLAUDE.md" ]; then
+        print_success "CLAUDE.md is a symlink"
+    else
+        print_failure "CLAUDE.md should be a symlink when --share-claude-md is used"
+    fi
+
+    # Verify symlink points to main config
+    local target
+    target=$(readlink "$MACHINE1_DIR/.claude-shared-md/CLAUDE.md")
+    if [ "$target" = "$MACHINE1_DIR/.claude/CLAUDE.md" ]; then
+        print_success "CLAUDE.md symlink points to main config"
+    else
+        print_failure "CLAUDE.md symlink points to wrong target: $target"
+    fi
+
+    # Verify content matches
+    assert_file_contains "$MACHINE1_DIR/.claude-shared-md/CLAUDE.md" "Shared global instructions"
+}
+
+test_profile_no_share_claude_md() {
+    print_test "profile create with --no-share-claude-md creates independent CLAUDE.md"
+
+    # Create a profile with --no-share-claude-md
+    run_jean_claude "$MACHINE1_DIR" profile create indep-md --yes --shell .bashrc --no-share-claude-md
+
+    assert_dir_exists "$MACHINE1_DIR/.claude-indep-md"
+    assert_file_exists "$MACHINE1_DIR/.claude-indep-md/CLAUDE.md"
+
+    # Verify CLAUDE.md is NOT a symlink
+    if [ -L "$MACHINE1_DIR/.claude-indep-md/CLAUDE.md" ]; then
+        print_failure "CLAUDE.md should not be a symlink when --no-share-claude-md is used"
+    else
+        print_success "CLAUDE.md is an independent file"
+    fi
+
+    # Verify it has the profile template content
+    assert_file_contains "$MACHINE1_DIR/.claude-indep-md/CLAUDE.md" "indep-md profile"
+}
+
+test_profile_share_statusline() {
+    print_test "profile create with --share-statusline symlinks statusline.sh"
+
+    # Ensure main config has a statusline.sh
+    echo '#!/bin/bash' > "$MACHINE1_DIR/.claude/statusline.sh"
+    echo 'echo "my statusline"' >> "$MACHINE1_DIR/.claude/statusline.sh"
+
+    # Create a profile with --share-statusline
+    run_jean_claude "$MACHINE1_DIR" profile create shared-sl --yes --shell .bashrc --share-statusline
+
+    assert_dir_exists "$MACHINE1_DIR/.claude-shared-sl"
+
+    # Verify statusline.sh is a symlink
+    if [ -L "$MACHINE1_DIR/.claude-shared-sl/statusline.sh" ]; then
+        print_success "statusline.sh is a symlink"
+    else
+        print_failure "statusline.sh should be a symlink when --share-statusline is used"
+    fi
+
+    # Verify symlink points to main config
+    local target
+    target=$(readlink "$MACHINE1_DIR/.claude-shared-sl/statusline.sh")
+    if [ "$target" = "$MACHINE1_DIR/.claude/statusline.sh" ]; then
+        print_success "statusline.sh symlink points to main config"
+    else
+        print_failure "statusline.sh symlink points to wrong target: $target"
+    fi
+
+    # Verify content matches
+    assert_file_contains "$MACHINE1_DIR/.claude-shared-sl/statusline.sh" "my statusline"
+}
+
+test_profile_no_share_statusline() {
+    print_test "profile create with --no-share-statusline does not create statusline.sh"
+
+    # Create a profile with --no-share-statusline
+    run_jean_claude "$MACHINE1_DIR" profile create no-sl --yes --shell .bashrc --no-share-statusline
+
+    assert_dir_exists "$MACHINE1_DIR/.claude-no-sl"
+
+    # Verify statusline.sh does NOT exist in the profile
+    if [ -e "$MACHINE1_DIR/.claude-no-sl/statusline.sh" ]; then
+        print_failure "statusline.sh should not exist when --no-share-statusline is used"
+    else
+        print_success "statusline.sh is not present in profile"
+    fi
+}
+
+test_profile_share_both() {
+    print_test "profile create with both --share-claude-md and --share-statusline"
+
+    # Create a profile sharing both
+    run_jean_claude "$MACHINE1_DIR" profile create shared-both --yes --shell .bashrc --share-claude-md --share-statusline
+
+    assert_dir_exists "$MACHINE1_DIR/.claude-shared-both"
+
+    # Verify both are symlinks
+    if [ -L "$MACHINE1_DIR/.claude-shared-both/CLAUDE.md" ] && [ -L "$MACHINE1_DIR/.claude-shared-both/statusline.sh" ]; then
+        print_success "Both CLAUDE.md and statusline.sh are symlinks"
+    else
+        print_failure "Both should be symlinks when sharing is enabled"
+    fi
+}
+
 test_profile_shell_alias() {
     print_test "profile shell alias installation"
 
@@ -1872,6 +1987,11 @@ run_all_tests() {
     test_profile_symlinks
     test_profile_symlink_content_shared
     test_profile_independent_claude_md
+    test_profile_share_claude_md
+    test_profile_no_share_claude_md
+    test_profile_share_statusline
+    test_profile_no_share_statusline
+    test_profile_share_both
     test_profile_shell_alias
     test_profile_list
     test_profile_create_second

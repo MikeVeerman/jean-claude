@@ -2,45 +2,43 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
-import { JeanClaudeError, ErrorCode } from '../../../src/types/index.js';
 
 // Mock paths module before importing profiles
 vi.mock('../../../src/lib/paths.js', () => ({
-  getJeanClaudeDir: vi.fn(),
   getConfigPaths: vi.fn(),
+  getJeanClaudeDir: vi.fn(),
 }));
 
 import {
   createProfile,
-  loadProfiles,
-  saveProfiles,
-  getProfileConfigDir,
+  createSymlinks,
+  SHARED_ITEMS,
 } from '../../../src/lib/profiles.js';
-import * as paths from '../../../src/lib/paths.js';
+import { getConfigPaths, getJeanClaudeDir } from '../../../src/lib/paths.js';
 
 describe('profiles.ts', () => {
   let tempDir: string;
-  let jeanClaudeDir: string;
   let claudeConfigDir: string;
-  let homedirSpy: ReturnType<typeof vi.spyOn>;
+  let jeanClaudeDir: string;
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jean-claude-test-'));
-    jeanClaudeDir = path.join(tempDir, '.jean-claude');
     claudeConfigDir = path.join(tempDir, '.claude');
+    jeanClaudeDir = path.join(tempDir, '.jean-claude');
 
-    await fs.ensureDir(jeanClaudeDir);
     await fs.ensureDir(claudeConfigDir);
+    await fs.ensureDir(jeanClaudeDir);
 
     // Redirect os.homedir() so getProfileConfigDir creates dirs inside tempDir
-    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tempDir);
+    vi.spyOn(os, 'homedir').mockReturnValue(tempDir);
 
-    vi.mocked(paths.getJeanClaudeDir).mockReturnValue(jeanClaudeDir);
-    vi.mocked(paths.getConfigPaths).mockReturnValue({
-      jeanClaudeDir,
+    // Set up mocks
+    vi.mocked(getConfigPaths).mockReturnValue({
       claudeConfigDir,
+      jeanClaudeDir,
       platform: 'darwin',
     });
+    vi.mocked(getJeanClaudeDir).mockReturnValue(jeanClaudeDir);
   });
 
   afterEach(async () => {
@@ -48,87 +46,162 @@ describe('profiles.ts', () => {
     vi.restoreAllMocks();
   });
 
-  describe('createProfile — duplicate prevention', () => {
-    it('should throw ALREADY_EXISTS when profile name is in the registry', async () => {
-      await saveProfiles({
-        profiles: {
-          work: {
-            alias: 'claude-work',
-            configDir: path.join(tempDir, '.claude-work'),
-          },
-        },
-      });
+  describe('createProfile', () => {
+    it('should create an independent CLAUDE.md by default', async () => {
+      // Create a CLAUDE.md in main config to verify it is NOT symlinked
+      await fs.writeFile(
+        path.join(claudeConfigDir, 'CLAUDE.md'),
+        '# Main config'
+      );
 
-      await expect(createProfile('work')).rejects.toMatchObject({
-        code: ErrorCode.ALREADY_EXISTS,
-        message: expect.stringContaining('already exists'),
-      });
+      const profile = await createProfile('test-default');
+      const claudeMdPath = path.join(profile.configDir, 'CLAUDE.md');
+
+      expect(await fs.pathExists(claudeMdPath)).toBe(true);
+
+      // Should be a regular file, not a symlink
+      const stat = await fs.lstat(claudeMdPath);
+      expect(stat.isSymbolicLink()).toBe(false);
+
+      const content = await fs.readFile(claudeMdPath, 'utf-8');
+      expect(content).toContain('test-default profile');
     });
 
-    it('should include profile name in registry-conflict error message', async () => {
-      await saveProfiles({
-        profiles: {
-          personal: {
-            alias: 'claude-personal',
-            configDir: path.join(tempDir, '.claude-personal'),
-          },
-        },
-      });
+    it('should symlink CLAUDE.md when shareClaudeMd is true', async () => {
+      const mainClaudeMd = path.join(claudeConfigDir, 'CLAUDE.md');
+      await fs.writeFile(mainClaudeMd, '# Shared instructions');
 
-      try {
-        await createProfile('personal');
-        expect.fail('should have thrown');
-      } catch (err) {
-        const error = err as JeanClaudeError;
-        expect(error.message).toContain('personal');
-        expect(error.suggestion).toBeDefined();
-      }
+      const profile = await createProfile('test-shared-md', {
+        shareClaudeMd: true,
+      });
+      const claudeMdPath = path.join(profile.configDir, 'CLAUDE.md');
+
+      expect(await fs.pathExists(claudeMdPath)).toBe(true);
+
+      // Should be a symlink
+      const stat = await fs.lstat(claudeMdPath);
+      expect(stat.isSymbolicLink()).toBe(true);
+
+      // Should point to main config
+      const target = await fs.readlink(claudeMdPath);
+      expect(target).toBe(mainClaudeMd);
+
+      // Content should match the main file
+      const content = await fs.readFile(claudeMdPath, 'utf-8');
+      expect(content).toBe('# Shared instructions');
     });
 
-    it('should throw ALREADY_EXISTS when profile directory exists on disk', async () => {
-      await saveProfiles({ profiles: {} });
-
-      const profileDir = getProfileConfigDir('orphan');
-      await fs.ensureDir(profileDir);
-
-      await expect(createProfile('orphan')).rejects.toMatchObject({
-        code: ErrorCode.ALREADY_EXISTS,
-        message: expect.stringContaining('already exists on disk'),
+    it('should fall back to independent CLAUDE.md when shareClaudeMd is true but source does not exist', async () => {
+      // Do NOT create CLAUDE.md in main config
+      const profile = await createProfile('test-fallback-md', {
+        shareClaudeMd: true,
       });
+      const claudeMdPath = path.join(profile.configDir, 'CLAUDE.md');
+
+      expect(await fs.pathExists(claudeMdPath)).toBe(true);
+      const stat = await fs.lstat(claudeMdPath);
+      expect(stat.isSymbolicLink()).toBe(false);
     });
 
-    it('should succeed when neither registry entry nor directory exists', async () => {
-      await saveProfiles({ profiles: {} });
+    it('should not symlink statusline.sh by default', async () => {
+      await fs.writeFile(
+        path.join(claudeConfigDir, 'statusline.sh'),
+        '#!/bin/bash\necho "status"'
+      );
 
-      const profile = await createProfile('fresh');
+      const profile = await createProfile('test-no-statusline');
+      const statuslinePath = path.join(profile.configDir, 'statusline.sh');
 
-      expect(profile.alias).toBe('claude-fresh');
-      expect(profile.configDir).toBe(getProfileConfigDir('fresh'));
-      expect(await fs.pathExists(profile.configDir)).toBe(true);
-
-      const config = await loadProfiles();
-      expect(config.profiles['fresh']).toBeDefined();
+      expect(await fs.pathExists(statuslinePath)).toBe(false);
     });
 
-    it('should not create the directory when registry check fails', async () => {
-      await saveProfiles({
-        profiles: {
-          dup: {
-            alias: 'claude-dup',
-            configDir: path.join(tempDir, '.claude-dup'),
-          },
-        },
+    it('should symlink statusline.sh when shareStatusline is true', async () => {
+      const mainStatusline = path.join(claudeConfigDir, 'statusline.sh');
+      await fs.writeFile(mainStatusline, '#!/bin/bash\necho "status"');
+
+      const profile = await createProfile('test-statusline', {
+        shareStatusline: true,
+      });
+      const statuslinePath = path.join(profile.configDir, 'statusline.sh');
+
+      expect(await fs.pathExists(statuslinePath)).toBe(true);
+
+      const stat = await fs.lstat(statuslinePath);
+      expect(stat.isSymbolicLink()).toBe(true);
+
+      const target = await fs.readlink(statuslinePath);
+      expect(target).toBe(mainStatusline);
+    });
+
+    it('should not create statusline.sh symlink when source does not exist', async () => {
+      // Do NOT create statusline.sh in main config
+      const profile = await createProfile('test-no-src-statusline', {
+        shareStatusline: true,
+      });
+      const statuslinePath = path.join(profile.configDir, 'statusline.sh');
+
+      expect(await fs.pathExists(statuslinePath)).toBe(false);
+    });
+
+    it('should support both sharing options together', async () => {
+      await fs.writeFile(
+        path.join(claudeConfigDir, 'CLAUDE.md'),
+        '# Shared'
+      );
+      await fs.writeFile(
+        path.join(claudeConfigDir, 'statusline.sh'),
+        '#!/bin/bash'
+      );
+
+      const profile = await createProfile('test-both', {
+        shareClaudeMd: true,
+        shareStatusline: true,
       });
 
-      const profileDir = getProfileConfigDir('dup');
+      const claudeMdStat = await fs.lstat(
+        path.join(profile.configDir, 'CLAUDE.md')
+      );
+      expect(claudeMdStat.isSymbolicLink()).toBe(true);
 
-      try {
-        await createProfile('dup');
-      } catch {
-        // expected
-      }
+      const statuslineStat = await fs.lstat(
+        path.join(profile.configDir, 'statusline.sh')
+      );
+      expect(statuslineStat.isSymbolicLink()).toBe(true);
+    });
+  });
 
-      expect(await fs.pathExists(profileDir)).toBe(false);
+  describe('createSymlinks', () => {
+    it('should create symlinks for existing shared items', async () => {
+      const sourceDir = path.join(tempDir, 'source');
+      const targetDir = path.join(tempDir, 'target');
+      await fs.ensureDir(sourceDir);
+      await fs.ensureDir(targetDir);
+
+      // Create some shared items
+      await fs.writeFile(
+        path.join(sourceDir, 'settings.json'),
+        '{"key":"value"}'
+      );
+      await fs.ensureDir(path.join(sourceDir, 'hooks'));
+
+      const created = await createSymlinks(sourceDir, targetDir);
+
+      expect(created).toContain('settings.json');
+      expect(created).toContain('hooks');
+
+      const stat = await fs.lstat(path.join(targetDir, 'settings.json'));
+      expect(stat.isSymbolicLink()).toBe(true);
+    });
+
+    it('should skip items that do not exist in source', async () => {
+      const sourceDir = path.join(tempDir, 'source');
+      const targetDir = path.join(tempDir, 'target');
+      await fs.ensureDir(sourceDir);
+      await fs.ensureDir(targetDir);
+
+      // Don't create any shared items
+      const created = await createSymlinks(sourceDir, targetDir);
+      expect(created).toEqual([]);
     });
   });
 });

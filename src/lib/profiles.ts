@@ -42,7 +42,16 @@ export function getProfileConfigDir(name: string): string {
   return path.join(home, `.claude-${name}`);
 }
 
-export async function createProfile(name: string): Promise<Profile> {
+export interface CreateProfileOptions {
+  shareStatusline?: boolean;
+  shareClaudeMd?: boolean;
+}
+
+export async function createProfile(
+  name: string,
+  options: CreateProfileOptions = {}
+): Promise<Profile> {
+  const { shareStatusline = false, shareClaudeMd = false } = options;
   const config = await loadProfiles();
 
   if (config.profiles[name]) {
@@ -71,12 +80,26 @@ export async function createProfile(name: string): Promise<Profile> {
   const { claudeConfigDir } = getConfigPaths();
   await createSymlinks(claudeConfigDir, configDir);
 
-  // Create an empty CLAUDE.md for the profile
+  // Optionally symlink statusline.sh from main config
+  if (shareStatusline) {
+    const sourcePath = path.join(claudeConfigDir, 'statusline.sh');
+    const targetPath = path.join(configDir, 'statusline.sh');
+    if (await fs.pathExists(sourcePath)) {
+      await fs.symlink(sourcePath, targetPath);
+    }
+  }
+
+  // Handle CLAUDE.md: symlink from main config or create independent file
   const claudeMdPath = path.join(configDir, 'CLAUDE.md');
-  await fs.writeFile(
-    claudeMdPath,
-    `# Claude Code Configuration (${name} profile)\n\nThis file is loaded by Claude Code at the start of every session.\n`
-  );
+  const claudeMdSource = path.join(claudeConfigDir, 'CLAUDE.md');
+  if (shareClaudeMd && (await fs.pathExists(claudeMdSource))) {
+    await fs.symlink(claudeMdSource, claudeMdPath);
+  } else {
+    await fs.writeFile(
+      claudeMdPath,
+      `# Claude Code Configuration (${name} profile)\n\nThis file is loaded by Claude Code at the start of every session.\n`
+    );
+  }
 
   // Save profile to registry
   const profile: Profile = {

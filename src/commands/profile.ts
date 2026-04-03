@@ -13,6 +13,7 @@ import {
   detectShellConfigFiles,
   refreshSymlinks,
   SHARED_ITEMS,
+  type CreateProfileOptions,
 } from '../lib/profiles.js';
 import { getJeanClaudeDir } from '../lib/paths.js';
 import { JeanClaudeError, ErrorCode } from '../types/index.js';
@@ -23,7 +24,11 @@ const profileCreateCommand = new Command('create')
   .argument('[name]', 'Profile name (e.g., "work", "personal")')
   .option('-y, --yes', 'Skip confirmation prompts')
   .option('--shell <file>', 'Shell config file to add alias to (e.g., .zshrc, .bashrc)')
-  .action(async (nameArg: string | undefined, options: { yes?: boolean; shell?: string }) => {
+  .option('--share-statusline', 'Share statusline.sh with this profile (symlink)')
+  .option('--no-share-statusline', 'Do not share statusline.sh with this profile')
+  .option('--share-claude-md', 'Share CLAUDE.md with this profile (symlink)')
+  .option('--no-share-claude-md', 'Do not share CLAUDE.md with this profile')
+  .action(async (nameArg: string | undefined, options: { yes?: boolean; shell?: string; shareStatusline?: boolean; shareClaudeMd?: boolean }) => {
     // Verify jean-claude is initialized
     const jcDir = getJeanClaudeDir();
     if (!(await fs.pathExists(jcDir))) {
@@ -59,10 +64,32 @@ const profileCreateCommand = new Command('create')
     logger.dim('The following items will be symlinked from your main config:');
     logger.list(SHARED_ITEMS.map((i) => i.name));
     console.log();
-    logger.dim(
-      'Profile-specific files (like CLAUDE.md) will be independent.'
-    );
-    console.log();
+
+    // Determine optional sharing preferences
+    const createOptions: CreateProfileOptions = {};
+
+    if (options.shareStatusline !== undefined) {
+      createOptions.shareStatusline = options.shareStatusline;
+    } else if (!options.yes) {
+      createOptions.shareStatusline = await confirm(
+        'Share your statusline configuration with this profile?'
+      );
+    }
+
+    if (options.shareClaudeMd !== undefined) {
+      createOptions.shareClaudeMd = options.shareClaudeMd;
+    } else if (!options.yes) {
+      createOptions.shareClaudeMd = await confirm(
+        'Share your CLAUDE.md with this profile?'
+      );
+    }
+
+    if (!createOptions.shareClaudeMd) {
+      logger.dim(
+        'Profile-specific files (like CLAUDE.md) will be independent.'
+      );
+      console.log();
+    }
 
     if (!options.yes) {
       const proceed = await confirm('Create this profile?');
@@ -74,7 +101,7 @@ const profileCreateCommand = new Command('create')
 
     // Create profile
     logger.step(1, 3, 'Creating profile directory and symlinks...');
-    const profile = await createProfile(name);
+    const profile = await createProfile(name, createOptions);
     logger.success('Profile directory created');
 
     // Install shell alias
@@ -95,11 +122,19 @@ const profileCreateCommand = new Command('create')
     console.log();
     logger.heading('Next steps');
     console.log();
-    logger.list([
-      `Reload your shell or run: ${chalk.cyan(`source ~/${shellFile}`)}`,
-      `Then use ${chalk.cyan(`claude-${name}`)} to launch Claude Code with this profile.`,
-      `Edit ${chalk.cyan(formatPath(configDir) + '/CLAUDE.md')} to add profile-specific instructions.`,
-    ]);
+    if (createOptions.shareClaudeMd) {
+      logger.list([
+        `Reload your shell or run: ${chalk.cyan(`source ~/${shellFile}`)}`,
+        `Then use ${chalk.cyan(`claude-${name}`)} to launch Claude Code with this profile.`,
+        `CLAUDE.md is shared (symlinked) from your main config.`,
+      ]);
+    } else {
+      logger.list([
+        `Reload your shell or run: ${chalk.cyan(`source ~/${shellFile}`)}`,
+        `Then use ${chalk.cyan(`claude-${name}`)} to launch Claude Code with this profile.`,
+        `Edit ${chalk.cyan(formatPath(configDir) + '/CLAUDE.md')} to add profile-specific instructions.`,
+      ]);
+    }
   });
 
 const profileListCommand = new Command('list')

@@ -58,9 +58,9 @@ export async function createProfile(name: string): Promise<Profile> {
 
   if (await fs.pathExists(configDir)) {
     throw new JeanClaudeError(
-      `Directory ${configDir} already exists`,
+      `Profile directory ${configDir} already exists on disk`,
       ErrorCode.ALREADY_EXISTS,
-      `Remove it first or choose a different profile name.`
+      `Remove it manually or choose a different profile name.`
     );
   }
 

@@ -200,7 +200,7 @@ const profileDeleteCommand = new Command('delete')
     console.log();
 
     if (!options.yes) {
-      const proceed = await confirm('Delete this profile?');
+      const proceed = await confirm('Delete this profile?', false);
       if (!proceed) {
         logger.dim('Cancelled.');
         return;

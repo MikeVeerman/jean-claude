@@ -150,17 +150,29 @@ export async function commitAndPush(
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
           if (errMsg.includes('CONFLICT') || errMsg.includes('conflict')) {
+            // Check if meta.json is the only conflicting file — auto-resolve it
+            const conflictStatus = await git.status();
+            const conflictFiles = conflictStatus.conflicted;
+            if (conflictFiles.length === 1 && conflictFiles[0] === 'meta.json') {
+              await git.checkout(['--ours', 'meta.json']);
+              await git.add('meta.json');
+              await git.env('GIT_EDITOR', 'true').rebase(['--continue']);
+            } else {
+              await git.rebase(['--abort']);
+              throw new JeanClaudeError(
+                `Rebase failed due to conflicts: ${errMsg}`,
+                ErrorCode.MERGE_CONFLICT,
+                'Try running "jean-claude sync pull" to resolve conflicts.'
+              );
+            }
+          } else if (!errMsg.includes('no such ref') && !errMsg.includes("Couldn't find remote ref")) {
+            // Remote branch doesn't exist yet — skip rebase, first push will create it
             throw new JeanClaudeError(
-              `Rebase failed due to conflicts: ${errMsg}`,
-              ErrorCode.MERGE_CONFLICT,
-              'Try running "jean-claude sync pull" to resolve conflicts.'
+              `Pull --rebase failed: ${errMsg}`,
+              ErrorCode.NETWORK_ERROR,
+              'Check your network connection and try again.'
             );
           }
-          throw new JeanClaudeError(
-            `Pull --rebase failed: ${errMsg}`,
-            ErrorCode.NETWORK_ERROR,
-            'Check your network connection and try again.'
-          );
         }
       }
 

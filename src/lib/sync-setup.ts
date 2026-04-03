@@ -13,7 +13,7 @@ async function warnIfNotJeanClaudeRepo(dir: string): Promise<void> {
 
   logger.warn('This repository does not appear to be a Jean-Claude config repo.');
   logger.dim('It may overwrite your Claude Code configuration with unrelated files.');
-  const proceed = await confirm('Continue anyway?');
+  const proceed = await confirm('Continue anyway?', false);
   if (!proceed) {
     throw new JeanClaudeError(
       'Setup cancelled — repository validation failed',
@@ -102,8 +102,14 @@ export async function setupGitSync(jeanClaudeDir: string, urlArg?: string): Prom
       // Empty directory — clone directly
       try {
         await cloneRepo(repoUrl, jeanClaudeDir);
-        await warnIfNotJeanClaudeRepo(jeanClaudeDir);
-        logger.success('Cloned existing config from repository');
+        const cloneGit = createGit(jeanClaudeDir);
+        const hasCommits = await cloneGit.log().then(log => log.total > 0).catch(() => false);
+        if (hasCommits) {
+          await warnIfNotJeanClaudeRepo(jeanClaudeDir);
+          logger.success('Cloned existing config from repository');
+        } else {
+          logger.success('Initialized new repository');
+        }
       } catch (error) {
         if (error instanceof JeanClaudeError && error.code !== ErrorCode.CLONE_FAILED) throw error;
         await initRepo(jeanClaudeDir);
@@ -115,16 +121,21 @@ export async function setupGitSync(jeanClaudeDir: string, urlArg?: string): Prom
       const tmpDir = path.join(os.tmpdir(), `jean-claude-clone-${Date.now()}`);
       try {
         await cloneRepo(repoUrl, tmpDir);
-        await warnIfNotJeanClaudeRepo(tmpDir);
-        // Move .git from clone into our directory
-        await fs.move(path.join(tmpDir, '.git'), path.join(jeanClaudeDir, '.git'));
-        // Reset to match working tree (our existing files take priority)
-        const git = createGit(jeanClaudeDir);
-        await git.reset(['HEAD']);
-        logger.success('Cloned existing config from repository');
+        const tmpGit = createGit(tmpDir);
+        const hasCommits = await tmpGit.log().then(log => log.total > 0).catch(() => false);
+        if (hasCommits) {
+          await warnIfNotJeanClaudeRepo(tmpDir);
+          await fs.move(path.join(tmpDir, '.git'), path.join(jeanClaudeDir, '.git'));
+          const git = createGit(jeanClaudeDir);
+          await git.reset(['HEAD']);
+          logger.success('Cloned existing config from repository');
+        } else {
+          // Empty remote — take the .git (has origin configured), skip reset
+          await fs.move(path.join(tmpDir, '.git'), path.join(jeanClaudeDir, '.git'));
+          logger.success('Initialized new repository');
+        }
       } catch (error) {
         if (error instanceof JeanClaudeError && error.code !== ErrorCode.CLONE_FAILED) throw error;
-        // Remote is empty — just init locally
         await initRepo(jeanClaudeDir);
         await addRemote(jeanClaudeDir, repoUrl);
         logger.success('Initialized new repository');

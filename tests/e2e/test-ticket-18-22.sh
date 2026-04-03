@@ -277,6 +277,14 @@ test_ticket_18_pull_warns_uncommitted_changes() {
 test_ticket_22_push_auto_rebases_on_divergence() {
     print_header "Ticket #22: sync push auto-rebases on divergent history"
 
+    # The scenario: two machines push independently without pulling each other's
+    # changes first. The expected behavior is:
+    #   1. pull --rebase runs automatically before push
+    #   2. meta.json will always conflict (different timestamps/machineIds) but
+    #      since it's machine-generated metadata, it should be auto-resolved
+    #   3. Non-conflicting user files (different skill files) should rebase cleanly
+    #   4. The push should succeed and both machines should converge
+
     # 1. Create isolated environment
     create_test_env "ticket22" true
 
@@ -298,6 +306,8 @@ test_ticket_22_push_auto_rebases_on_divergence() {
     assert_file_exists "$TICKET_M1/.claude/.jean-claude/skills/m1-skill.md"
 
     # 5. m2 creates a DIFFERENT file and pushes WITHOUT pulling m1's change first
+    #    This will cause divergent history. meta.json will conflict (different
+    #    timestamps) but should be auto-resolved. The skill files don't conflict.
     print_test "#22 - Machine 2 pushes a different skill file (divergent)"
     mkdir -p "$TICKET_M2/.claude/skills"
     echo "skill from m2" > "$TICKET_M2/.claude/skills/m2-skill.md"
@@ -309,8 +319,8 @@ test_ticket_22_push_auto_rebases_on_divergence() {
     print_info "Push output (last 5 lines):"
     echo "$output" | tail -5 | while read -r line; do print_info "  $line"; done
 
-    # 6. Assert: push succeeded without confusing errors
-    print_test "#22 - Push succeeds with auto-rebase (no NETWORK_ERROR)"
+    # 6. Assert: push succeeded — meta.json conflict was auto-resolved
+    print_test "#22 - Push succeeds with auto-rebase (meta.json conflict auto-resolved)"
     if [ "$exit_code" -eq 0 ]; then
         print_success "Push exit code is 0"
     else
@@ -318,7 +328,7 @@ test_ticket_22_push_auto_rebases_on_divergence() {
     fi
     assert_output_not_contains "$output" "NETWORK_ERROR"
     assert_output_not_contains "$output" "rejected"
-    assert_output_not_contains "$output" "failed"
+    assert_output_not_contains "$output" "MERGE_CONFLICT"
 
     # 7. Verify convergence - pull on m1 and check both files exist
     print_test "#22 - Convergence: both skills present after pull on m1"

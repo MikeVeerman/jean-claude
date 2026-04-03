@@ -156,11 +156,14 @@ export async function commitAndPush(
               'Try running "jean-claude sync pull" to resolve conflicts.'
             );
           }
-          throw new JeanClaudeError(
-            `Pull --rebase failed: ${errMsg}`,
-            ErrorCode.NETWORK_ERROR,
-            'Check your network connection and try again.'
-          );
+          // Remote branch doesn't exist yet — skip rebase, first push will create it
+          if (!errMsg.includes('no such ref') && !errMsg.includes("Couldn't find remote ref")) {
+            throw new JeanClaudeError(
+              `Pull --rebase failed: ${errMsg}`,
+              ErrorCode.NETWORK_ERROR,
+              'Check your network connection and try again.'
+            );
+          }
         }
       }
 

@@ -165,8 +165,9 @@ export async function commitAndPush(
                 'Try running "jean-claude sync pull" to resolve conflicts.'
               );
             }
-          } else if (!errMsg.includes('no such ref') && !errMsg.includes("Couldn't find remote ref")) {
+          } else if (errMsg.includes('no such ref') || errMsg.includes("Couldn't find remote ref")) {
             // Remote branch doesn't exist yet — skip rebase, first push will create it
+          } else {
             throw new JeanClaudeError(
               `Pull --rebase failed: ${errMsg}`,
               ErrorCode.NETWORK_ERROR,

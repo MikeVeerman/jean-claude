@@ -34,7 +34,9 @@ export async function loadProfiles(): Promise<ProfileConfig> {
 
 export async function saveProfiles(config: ProfileConfig): Promise<void> {
   const profilesPath = getProfilesPath();
-  await fs.writeJson(profilesPath, config, { spaces: 2 });
+  const tmpPath = `${profilesPath}.${process.pid}.tmp`;
+  await fs.writeJson(tmpPath, config, { spaces: 2 });
+  await fs.rename(tmpPath, profilesPath);
 }
 
 export function getProfileConfigDir(name: string): string {
@@ -65,16 +67,19 @@ export async function createProfile(
   const configDir = getProfileConfigDir(name);
   const alias = `claude-${name}`;
 
-  if (await fs.pathExists(configDir)) {
-    throw new JeanClaudeError(
-      `Profile directory ${configDir} already exists on disk`,
-      ErrorCode.ALREADY_EXISTS,
-      `Remove it manually or choose a different profile name.`
-    );
+  // Atomic directory creation — avoids TOCTOU race between exists-check and mkdir
+  try {
+    await fs.mkdir(configDir, { recursive: false });
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'EEXIST') {
+      throw new JeanClaudeError(
+        `Profile directory ${configDir} already exists on disk`,
+        ErrorCode.ALREADY_EXISTS,
+        `Remove it manually or choose a different profile name.`
+      );
+    }
+    throw err;
   }
-
-  // Create profile directory
-  await fs.ensureDir(configDir);
 
   // Create symlinks for shared items
   const { claudeConfigDir } = getConfigPaths();
@@ -187,6 +192,17 @@ export function getShellAliasBlock(name: string, profile: Profile): string {
   return `\n# jean-claude profile: ${name}\n${getShellAliasLine(profile)}\n`;
 }
 
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function profileAliasRegex(name: string): RegExp {
+  return new RegExp(
+    `\\n# jean-claude profile: ${escapeRegExp(name)}\\n[^\\n]+\\n`,
+    'g'
+  );
+}
+
 export async function installShellAlias(
   name: string,
   profile: Profile,
@@ -199,12 +215,7 @@ export async function installShellAlias(
   if (await fs.pathExists(rcPath)) {
     const content = await fs.readFile(rcPath, 'utf-8');
     if (content.includes(`jean-claude profile: ${name}`)) {
-      // Replace existing block
-      const regex = new RegExp(
-        `\\n# jean-claude profile: ${name}\\n[^\\n]+\\n`,
-        'g'
-      );
-      const updated = content.replace(regex, block);
+      const updated = content.replace(profileAliasRegex(name), block);
       await fs.writeFile(rcPath, updated);
       return;
     }
@@ -229,11 +240,7 @@ export async function removeShellAlias(
     return false;
   }
 
-  const regex = new RegExp(
-    `\\n# jean-claude profile: ${name}\\n[^\\n]+\\n`,
-    'g'
-  );
-  const updated = content.replace(regex, '\n');
+  const updated = content.replace(profileAliasRegex(name), '\n');
   await fs.writeFile(rcPath, updated);
   return true;
 }

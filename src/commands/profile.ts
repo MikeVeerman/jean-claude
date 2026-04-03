@@ -53,6 +53,23 @@ const profileCreateCommand = new Command('create')
 
     const configDir = getProfileConfigDir(name);
 
+    // Fail early if profile already exists (before prompting for options)
+    const existingConfig = await loadProfiles();
+    if (existingConfig.profiles[name]) {
+      throw new JeanClaudeError(
+        `Profile "${name}" already exists`,
+        ErrorCode.ALREADY_EXISTS,
+        `Use 'jean-claude profile list' to see existing profiles.`
+      );
+    }
+    if (await fs.pathExists(configDir)) {
+      throw new JeanClaudeError(
+        `Profile directory ${configDir} already exists on disk`,
+        ErrorCode.ALREADY_EXISTS,
+        `Remove it manually or choose a different profile name.`
+      );
+    }
+
     logger.heading(`Creating profile: ${name}`);
     console.log();
     logger.table([

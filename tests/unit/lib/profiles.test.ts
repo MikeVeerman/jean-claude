@@ -12,6 +12,11 @@ vi.mock('../../../src/lib/paths.js', () => ({
 import {
   createProfile,
   createSymlinks,
+  saveProfiles,
+  loadProfiles,
+  installShellAlias,
+  removeShellAlias,
+  getShellAliasLine,
   SHARED_ITEMS,
 } from '../../../src/lib/profiles.js';
 import { getConfigPaths, getJeanClaudeDir } from '../../../src/lib/paths.js';
@@ -167,6 +172,86 @@ describe('profiles.ts', () => {
         path.join(profile.configDir, 'statusline.sh')
       );
       expect(statuslineStat.isSymbolicLink()).toBe(true);
+    });
+  });
+
+  describe('createProfile — atomic directory creation [2]', () => {
+    it('should fail gracefully when directory is created by another process between check and create', async () => {
+      await saveProfiles({ profiles: {} });
+
+      // Pre-create the directory to simulate a race condition
+      const configDir = path.join(tempDir, '.claude-raced');
+      await fs.ensureDir(configDir);
+
+      await expect(createProfile('raced')).rejects.toMatchObject({
+        code: 'ALREADY_EXISTS',
+        message: expect.stringContaining('already exists on disk'),
+      });
+
+      // Verify no partial state was left in the registry
+      const config = await loadProfiles();
+      expect(config.profiles['raced']).toBeUndefined();
+    });
+  });
+
+  describe('saveProfiles — atomic write [4]', () => {
+    it('should not leave partial JSON if write is interrupted', async () => {
+      // Write initial state
+      await saveProfiles({ profiles: { existing: { alias: 'claude-existing', configDir: '/tmp/existing' } } });
+
+      // Verify the file is valid JSON after save
+      const config = await loadProfiles();
+      expect(config.profiles['existing']).toBeDefined();
+      expect(config.profiles['existing'].alias).toBe('claude-existing');
+    });
+
+    it('should not leave temp files on successful save', async () => {
+      await saveProfiles({ profiles: {} });
+
+      const jcDir = getJeanClaudeDir();
+      const files = await fs.readdir(jcDir);
+      const tmpFiles = files.filter(f => f.endsWith('.tmp'));
+      expect(tmpFiles).toEqual([]);
+    });
+  });
+
+  describe('installShellAlias — regex escaping [1]', () => {
+    it('should correctly replace an existing alias using the escaped regex', async () => {
+      const rcPath = path.join(tempDir, '.zshrc');
+      const profile = { alias: 'claude-my-work', configDir: path.join(tempDir, '.claude-my-work') };
+
+      // Install the alias
+      await installShellAlias('my-work', profile, '.zshrc');
+      const content1 = await fs.readFile(rcPath, 'utf-8');
+      expect(content1).toContain('jean-claude profile: my-work');
+      expect(content1).toContain('claude-my-work');
+
+      // Re-install (should replace, not duplicate)
+      const updatedProfile = { alias: 'claude-my-work', configDir: '/updated/path' };
+      await installShellAlias('my-work', updatedProfile, '.zshrc');
+      const content2 = await fs.readFile(rcPath, 'utf-8');
+
+      // Should only have one alias block
+      const matches = content2.match(/jean-claude profile: my-work/g);
+      expect(matches?.length).toBe(1);
+      expect(content2).toContain('/updated/path');
+    });
+
+    it('should not match other profile names when replacing', async () => {
+      const rcPath = path.join(tempDir, '.zshrc');
+      const profileA = { alias: 'claude-a', configDir: path.join(tempDir, '.claude-a') };
+      const profileAb = { alias: 'claude-ab', configDir: path.join(tempDir, '.claude-ab') };
+
+      await installShellAlias('a', profileA, '.zshrc');
+      await installShellAlias('ab', profileAb, '.zshrc');
+
+      // Remove only 'a' — 'ab' should remain
+      const removed = await removeShellAlias('a', '.zshrc');
+      expect(removed).toBe(true);
+
+      const content = await fs.readFile(rcPath, 'utf-8');
+      expect(content).not.toContain('jean-claude profile: a\n');
+      expect(content).toContain('jean-claude profile: ab');
     });
   });
 

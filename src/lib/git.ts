@@ -143,15 +143,50 @@ export async function commitAndPush(
   if (push) {
     const remotes = await git.getRemotes();
     if (remotes.length > 0) {
+      // Only pull --rebase if we have an upstream tracking branch
+      if (status.tracking) {
+        try {
+          await git.pull(['--rebase']);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          if (errMsg.includes('CONFLICT') || errMsg.includes('conflict')) {
+            // Check if meta.json is the only conflicting file — auto-resolve it
+            const conflictStatus = await git.status();
+            const conflictFiles = conflictStatus.conflicted;
+            if (conflictFiles.length === 1 && conflictFiles[0] === 'meta.json') {
+              await git.checkout(['--ours', 'meta.json']);
+              await git.add('meta.json');
+              await git.env('GIT_EDITOR', 'true').rebase(['--continue']);
+            } else {
+              await git.rebase(['--abort']);
+              throw new JeanClaudeError(
+                `Rebase failed due to conflicts: ${errMsg}`,
+                ErrorCode.MERGE_CONFLICT,
+                'Try running "jean-claude sync pull" to resolve conflicts.'
+              );
+            }
+          } else if (errMsg.includes('no such ref') || errMsg.includes("Couldn't find remote ref")) {
+            // Remote branch doesn't exist yet — skip rebase, first push will create it
+          } else {
+            throw new JeanClaudeError(
+              `Pull --rebase failed: ${errMsg}`,
+              ErrorCode.NETWORK_ERROR,
+              'Check your network connection and try again.'
+            );
+          }
+        }
+      }
+
       try {
-        await git.push();
+        // Use -u to set upstream on first push
+        await git.push(['-u', 'origin', 'HEAD']);
         return { committed: true, pushed: true };
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         throw new JeanClaudeError(
           `Push failed: ${errMsg}`,
           ErrorCode.NETWORK_ERROR,
-          'Try running "git push" manually to see the full error.'
+          'Check your network connection and try again.'
         );
       }
     }

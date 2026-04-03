@@ -7,6 +7,7 @@ import {
   pushCommand,
   statusCommand,
   profileCommand,
+  syncCommand,
 } from './commands/index.js';
 import { JeanClaudeError } from './types/index.js';
 import { printLogo } from './utils/logo.js';
@@ -19,7 +20,7 @@ export function createProgram(): Command {
 
   program
     .name('jean-claude')
-    .description('Sync Claude Code configuration across machines using Git')
+    .description('Manage and sync Claude Code configuration across machines')
     .version(VERSION)
     .addHelpText('before', () => {
       printLogo();
@@ -27,10 +28,13 @@ export function createProgram(): Command {
     });
 
   program.addCommand(initCommand);
+  program.addCommand(syncCommand);
+  program.addCommand(profileCommand);
+
+  // Deprecated — kept as hidden commands with redirect messages
   program.addCommand(pullCommand);
   program.addCommand(pushCommand);
   program.addCommand(statusCommand);
-  program.addCommand(profileCommand);
 
   return program;
 }

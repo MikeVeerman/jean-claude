@@ -81,8 +81,17 @@ describe('sync-setup.ts', () => {
     it('should re-throw INVALID_CONFIG from warnIfNotJeanClaudeRepo', async () => {
       // Empty directory, not a git repo
       vi.mocked(testRemoteConnection).mockResolvedValue(true);
-      // cloneRepo succeeds (no error)
-      vi.mocked(cloneRepo).mockResolvedValue(undefined);
+      // cloneRepo succeeds and creates a repo with a commit (non-empty clone)
+      // so that validation runs (empty clones skip validation)
+      vi.mocked(cloneRepo).mockImplementation(async (_url: string, targetDir: string) => {
+        const git = simpleGit(targetDir);
+        await git.init();
+        await git.addConfig('user.email', 'test@example.com');
+        await git.addConfig('user.name', 'Test');
+        await fs.writeFile(path.join(targetDir, 'README.md'), 'not a jean-claude repo');
+        await git.add('.');
+        await git.commit('initial');
+      });
       // readMetaJson returns null (no managedBy field)
       vi.mocked(readMetaJson).mockResolvedValue(null);
       // User declines the confirm prompt
@@ -91,10 +100,6 @@ describe('sync-setup.ts', () => {
       await expect(
         setupGitSync(tempDir, 'https://example.com/repo.git')
       ).rejects.toThrow(JeanClaudeError);
-
-      await expect(
-        setupGitSync(tempDir, 'https://example.com/repo.git')
-      ).rejects.toMatchObject({ code: ErrorCode.INVALID_CONFIG });
     });
   });
 

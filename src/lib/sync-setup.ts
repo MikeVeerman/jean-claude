@@ -13,7 +13,7 @@ async function warnIfNotJeanClaudeRepo(dir: string): Promise<void> {
 
   logger.warn('This repository does not appear to be a Jean-Claude config repo.');
   logger.dim('It may overwrite your Claude Code configuration with unrelated files.');
-  const proceed = await confirm('Continue anyway?');
+  const proceed = await confirm('Continue anyway?', false);
   if (!proceed) {
     throw new JeanClaudeError(
       'Setup cancelled — repository validation failed',

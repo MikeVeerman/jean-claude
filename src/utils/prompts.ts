@@ -2,7 +2,7 @@ import inquirer from 'inquirer';
 
 export async function confirm(
   message: string,
-  defaultValue = false
+  defaultValue = true
 ): Promise<boolean> {
   const { confirmed } = await inquirer.prompt([
     {

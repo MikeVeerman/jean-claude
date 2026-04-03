@@ -156,7 +156,7 @@ export async function handleSyncPull(options: { force?: boolean } = {}): Promise
     gitStatus.modified.forEach(f => console.log(`  ${chalk.yellow('modified')}  ${f}`));
     gitStatus.untracked.forEach(f => console.log(`  ${chalk.green('untracked')}  ${f}`));
     console.log('');
-    const proceed = await confirm('Discard these changes and pull?');
+    const proceed = await confirm('Discard these changes and pull?', false);
     if (!proceed) {
       logger.dim('Pull cancelled. Commit or back up your changes first.');
       return;

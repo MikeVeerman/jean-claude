@@ -50,14 +50,16 @@ const profileCreateCommand = new Command('create')
 
     logger.heading(`Creating profile: ${name}`);
     console.log();
-    logger.info(`Config directory: ${chalk.cyan(formatPath(configDir))}`);
-    logger.info(`Shell alias:      ${chalk.cyan(`claude-${name}`)}`);
+    logger.table([
+      ['Config directory', chalk.cyan(formatPath(configDir))],
+      ['Shell alias', chalk.cyan(`claude-${name}`)],
+    ]);
     console.log();
 
-    logger.info('The following items will be symlinked from your main config:');
+    logger.dim('The following items will be symlinked from your main config:');
     logger.list(SHARED_ITEMS.map((i) => i.name));
     console.log();
-    logger.info(
+    logger.dim(
       'Profile-specific files (like CLAUDE.md) will be independent.'
     );
     console.log();
@@ -93,15 +95,11 @@ const profileCreateCommand = new Command('create')
     console.log();
     logger.heading('Next steps');
     console.log();
-    logger.info(
-      `Reload your shell or run: ${chalk.cyan(`source ~/${shellFile}`)}`
-    );
-    logger.info(
-      `Then use ${chalk.cyan(`claude-${name}`)} to launch Claude Code with this profile.`
-    );
-    logger.info(
-      `Edit ${chalk.cyan(formatPath(configDir) + '/CLAUDE.md')} to add profile-specific instructions.`
-    );
+    logger.list([
+      `Reload your shell or run: ${chalk.cyan(`source ~/${shellFile}`)}`,
+      `Then use ${chalk.cyan(`claude-${name}`)} to launch Claude Code with this profile.`,
+      `Edit ${chalk.cyan(formatPath(configDir) + '/CLAUDE.md')} to add profile-specific instructions.`,
+    ]);
   });
 
 const profileListCommand = new Command('list')
@@ -111,7 +109,7 @@ const profileListCommand = new Command('list')
     const names = Object.keys(config.profiles);
 
     if (names.length === 0) {
-      logger.info('No profiles configured.');
+      logger.dim('No profiles configured.');
       logger.dim('Create one with: jean-claude profile create <name>');
       return;
     }
@@ -169,7 +167,7 @@ const profileDeleteCommand = new Command('delete')
     const names = Object.keys(config.profiles);
 
     if (names.length === 0) {
-      logger.info('No profiles to delete.');
+      logger.dim('No profiles to delete.');
       return;
     }
 
@@ -196,7 +194,7 @@ const profileDeleteCommand = new Command('delete')
       `This will remove ${chalk.cyan(formatPath(profile.configDir))} and its contents.`
     );
     logger.warn('Profile-specific files (like CLAUDE.md) will be lost.');
-    logger.info('Shared files in your main ~/.claude/ are not affected (they are the originals).');
+    logger.dim('Shared files in your main ~/.claude/ are not affected (they are the originals).');
     console.log();
 
     if (!options.yes) {
@@ -234,7 +232,7 @@ const profileRefreshCommand = new Command('refresh')
     const names = Object.keys(config.profiles);
 
     if (names.length === 0) {
-      logger.info('No profiles configured.');
+      logger.dim('No profiles configured.');
       return;
     }
 
@@ -245,7 +243,7 @@ const profileRefreshCommand = new Command('refresh')
         names.map((n) => ({ name: n, value: n }))
       ));
 
-    logger.info(`Refreshing symlinks for profile "${name}"...`);
+    logger.dim(`Refreshing symlinks for profile "${name}"...`);
     const created = await refreshSymlinks(name);
     logger.success(`Symlinks refreshed: ${created.join(', ')}`);
   });

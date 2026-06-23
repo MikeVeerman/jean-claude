@@ -8,6 +8,7 @@ import {
   deleteProfile,
   getProfileConfigDir,
   getShellAliasLine,
+  getReloadInstruction,
   installShellAlias,
   removeShellAlias,
   detectShellConfigFiles,
@@ -139,15 +140,16 @@ const profileCreateCommand = new Command('create')
     console.log();
     logger.heading('Next steps');
     console.log();
+    const reloadCmd = getReloadInstruction(shellFile);
     if (createOptions.shareClaudeMd) {
       logger.list([
-        `Reload your shell or run: ${chalk.cyan(`source ~/${shellFile}`)}`,
+        `Reload your shell or run: ${chalk.cyan(reloadCmd)}`,
         `Then use ${chalk.cyan(`claude-${name}`)} to launch Claude Code with this profile.`,
         `CLAUDE.md is shared (symlinked) from your main config.`,
       ]);
     } else {
       logger.list([
-        `Reload your shell or run: ${chalk.cyan(`source ~/${shellFile}`)}`,
+        `Reload your shell or run: ${chalk.cyan(reloadCmd)}`,
         `Then use ${chalk.cyan(`claude-${name}`)} to launch Claude Code with this profile.`,
         `Edit ${chalk.cyan(formatPath(configDir) + '/CLAUDE.md')} to add profile-specific instructions.`,
       ]);

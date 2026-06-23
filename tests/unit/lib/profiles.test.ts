@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, MockedFunction } from 'vitest';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
@@ -7,7 +7,15 @@ import os from 'os';
 vi.mock('../../../src/lib/paths.js', () => ({
   getConfigPaths: vi.fn(),
   getJeanClaudeDir: vi.fn(),
+  detectPlatform: vi.fn(),
 }));
+
+/**
+ * Helper to skip tests on Windows.
+ * File symlinks on Windows require Developer Mode or admin privileges,
+ * making symlink-specific tests unreliable in CI.
+ */
+const isWindows = process.platform === 'win32';
 
 import {
   createProfile,
@@ -19,7 +27,7 @@ import {
   getShellAliasLine,
   SHARED_ITEMS,
 } from '../../../src/lib/profiles.js';
-import { getConfigPaths, getJeanClaudeDir } from '../../../src/lib/paths.js';
+import { getConfigPaths, getJeanClaudeDir, detectPlatform } from '../../../src/lib/paths.js';
 
 describe('profiles.ts', () => {
   let tempDir: string;
@@ -44,6 +52,7 @@ describe('profiles.ts', () => {
       platform: 'darwin',
     });
     vi.mocked(getJeanClaudeDir).mockReturnValue(jeanClaudeDir);
+    vi.mocked(detectPlatform).mockReturnValue('darwin');
   });
 
   afterEach(async () => {
@@ -72,7 +81,7 @@ describe('profiles.ts', () => {
       expect(content).toContain('test-default profile');
     });
 
-    it('should symlink CLAUDE.md when shareClaudeMd is true', async () => {
+    it.skipIf(isWindows)('should symlink CLAUDE.md when shareClaudeMd is true (skipped on Windows)', async () => {
       const mainClaudeMd = path.join(claudeConfigDir, 'CLAUDE.md');
       await fs.writeFile(mainClaudeMd, '# Shared instructions');
 
@@ -108,19 +117,22 @@ describe('profiles.ts', () => {
       expect(stat.isSymbolicLink()).toBe(false);
     });
 
-    it('should not symlink statusline.sh by default', async () => {
+    it.skipIf(isWindows)('should symlink statusline.sh if source exists (now in SHARED_ITEMS)', async () => {
       await fs.writeFile(
         path.join(claudeConfigDir, 'statusline.sh'),
         '#!/bin/bash\necho "status"'
       );
 
-      const profile = await createProfile('test-no-statusline');
+      const profile = await createProfile('test-statusline-shared');
       const statuslinePath = path.join(profile.configDir, 'statusline.sh');
 
-      expect(await fs.pathExists(statuslinePath)).toBe(false);
+      // statusline.sh is now in SHARED_ITEMS, so it will be symlinked
+      expect(await fs.pathExists(statuslinePath)).toBe(true);
+      const stat = await fs.lstat(statuslinePath);
+      expect(stat.isSymbolicLink()).toBe(true);
     });
 
-    it('should symlink statusline.sh when shareStatusline is true', async () => {
+    it.skipIf(isWindows)('should symlink statusline.sh when shareStatusline is true', async () => {
       const mainStatusline = path.join(claudeConfigDir, 'statusline.sh');
       await fs.writeFile(mainStatusline, '#!/bin/bash\necho "status"');
 
@@ -148,7 +160,7 @@ describe('profiles.ts', () => {
       expect(await fs.pathExists(statuslinePath)).toBe(false);
     });
 
-    it('should support both sharing options together', async () => {
+    it.skipIf(isWindows)('should support both sharing options together', async () => {
       await fs.writeFile(
         path.join(claudeConfigDir, 'CLAUDE.md'),
         '# Shared'
@@ -256,7 +268,7 @@ describe('profiles.ts', () => {
   });
 
   describe('createSymlinks', () => {
-    it('should create symlinks for existing shared items', async () => {
+    it.skipIf(isWindows)('should create symlinks for existing shared items and return results with method', async () => {
       const sourceDir = path.join(tempDir, 'source');
       const targetDir = path.join(tempDir, 'target');
       await fs.ensureDir(sourceDir);
@@ -269,10 +281,14 @@ describe('profiles.ts', () => {
       );
       await fs.ensureDir(path.join(sourceDir, 'hooks'));
 
-      const created = await createSymlinks(sourceDir, targetDir);
+      const results = await createSymlinks(sourceDir, targetDir);
 
-      expect(created).toContain('settings.json');
-      expect(created).toContain('hooks');
+      expect(results.map((r) => r.name)).toContain('settings.json');
+      expect(results.map((r) => r.name)).toContain('hooks');
+
+      // Verify directory used symlink method
+      const hooksResult = results.find((r) => r.name === 'hooks');
+      expect(hooksResult?.method).toBe('symlink');
 
       const stat = await fs.lstat(path.join(targetDir, 'settings.json'));
       expect(stat.isSymbolicLink()).toBe(true);
@@ -285,8 +301,8 @@ describe('profiles.ts', () => {
       await fs.ensureDir(targetDir);
 
       // Don't create any shared items
-      const created = await createSymlinks(sourceDir, targetDir);
-      expect(created).toEqual([]);
+      const results = await createSymlinks(sourceDir, targetDir);
+      expect(results).toEqual([]);
     });
   });
 });

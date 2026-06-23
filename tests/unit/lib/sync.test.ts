@@ -90,7 +90,7 @@ describe('sync.ts', () => {
         expect(meta.lastSync).toBeNull();
         expect(meta.claudeConfigPath).toBe(claudeConfigPath);
         expect(meta.machineId).toContain('-'); // Format: hostname-hash
-        expect(['linux', 'darwin']).toContain(meta.platform);
+        expect(['linux', 'darwin', 'win32']).toContain(meta.platform);
       });
 
       it('should generate consistent machineId for same hostname', () => {

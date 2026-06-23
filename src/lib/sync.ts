@@ -41,6 +41,11 @@ export const FILE_MAPPINGS: FileMapping[] = [
     target: 'statusline.sh',
     type: 'file',
   },
+  {
+    source: 'statusline.ps1',
+    target: 'statusline.ps1',
+    type: 'file',
+  },
 ];
 
 function fileHash(filePath: string): string | null {

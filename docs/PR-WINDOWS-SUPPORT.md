@@ -15,7 +15,7 @@ Jean-Claude's profile management (`profile create/list/delete`) was macOS/Linux-
 
 - The `detectPlatform()` function threw an error for `win32`
 - Shell alias generation used Bash-only syntax (`alias name='...'`)
-- File symlinks on Windows require Developer Mode or admin privileges — now uses **hardlinks** (`fs.link()`) which require no special privileges
+- File symlinks on Windows require Developer Mode or admin privileges — uses **hardlinks** (`fs.link()`) which require no special privileges
 - PowerShell profile paths can be redirected (OneDrive, VS Code custom profile), so writing to the wrong `.ps1` file meant aliases were never loaded
 
 This PR resolves all of the above, making Jean-Claude a **cross-platform** tool.
@@ -120,8 +120,7 @@ Would have symlinked both statusline files automatically whenever they exist.
 
 ## Review Checklist
 
-- [ ] Code style matches existing Owner (Mike Veerman) patterns: async/await, fs-extra, JSDoc
-- [ ] No breaking changes for existing macOS/Linux users
-- [ ] Tests updated for new behavior
-- [ ] Version bumped (2.0.0 → 2.1.0)
-- [ ] README updated (if needed)
+- [x] No breaking changes for existing macOS/Linux users
+- [x] Tests updated for new behavior
+- [x] Version bumped (2.0.0 → 2.1.0)
+- [x] README updated

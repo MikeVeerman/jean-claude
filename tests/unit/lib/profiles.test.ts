@@ -45,14 +45,15 @@ describe('profiles.ts', () => {
     // Redirect os.homedir() so getProfileConfigDir creates dirs inside tempDir
     vi.spyOn(os, 'homedir').mockReturnValue(tempDir);
 
-    // Set up mocks
+    // Set up mocks — detectPlatform returns actual OS for hardlink vs symlink logic
+    const actualPlatform = isWindows ? 'win32' : 'darwin';
     vi.mocked(getConfigPaths).mockReturnValue({
       claudeConfigDir,
       jeanClaudeDir,
-      platform: 'darwin',
+      platform: actualPlatform,
     });
     vi.mocked(getJeanClaudeDir).mockReturnValue(jeanClaudeDir);
-    vi.mocked(detectPlatform).mockReturnValue('darwin');
+    vi.mocked(detectPlatform).mockReturnValue(actualPlatform);
   });
 
   afterEach(async () => {
@@ -117,19 +118,39 @@ describe('profiles.ts', () => {
       expect(stat.isSymbolicLink()).toBe(false);
     });
 
-    it.skipIf(isWindows)('should symlink statusline.sh if source exists (now in SHARED_ITEMS)', async () => {
+    it.skipIf(isWindows)('should not symlink statusline.sh unless shareStatusline is true', async () => {
       await fs.writeFile(
         path.join(claudeConfigDir, 'statusline.sh'),
         '#!/bin/bash\necho "status"'
       );
 
-      const profile = await createProfile('test-statusline-shared');
+      const profile = await createProfile('test-no-statusline');
       const statuslinePath = path.join(profile.configDir, 'statusline.sh');
 
-      // statusline.sh is now in SHARED_ITEMS, so it will be symlinked
-      expect(await fs.pathExists(statuslinePath)).toBe(true);
-      const stat = await fs.lstat(statuslinePath);
-      expect(stat.isSymbolicLink()).toBe(true);
+      // statusline.sh is no longer in SHARED_ITEMS — opt-in only
+      expect(await fs.pathExists(statuslinePath)).toBe(false);
+    });
+
+    it.skipIf(isWindows)('should symlink both statusline.sh and statusline.ps1 when shareStatusline is true', async () => {
+      await fs.writeFile(
+        path.join(claudeConfigDir, 'statusline.sh'),
+        '#!/bin/bash\necho "status"'
+      );
+      await fs.writeFile(
+        path.join(claudeConfigDir, 'statusline.ps1'),
+        '# PowerShell statusline'
+      );
+
+      const profile = await createProfile('test-statusline-both', {
+        shareStatusline: true,
+      });
+
+      for (const statuslineFile of ['statusline.sh', 'statusline.ps1']) {
+        const sp = path.join(profile.configDir, statuslineFile);
+        expect(await fs.pathExists(sp)).toBe(true);
+        const stat = await fs.lstat(sp);
+        expect(stat.isSymbolicLink()).toBe(true);
+      }
     });
 
     it.skipIf(isWindows)('should symlink statusline.sh when shareStatusline is true', async () => {
@@ -268,7 +289,7 @@ describe('profiles.ts', () => {
   });
 
   describe('createSymlinks', () => {
-    it.skipIf(isWindows)('should create symlinks for existing shared items and return results with method', async () => {
+    it('should create links for existing shared items and return results with method', async () => {
       const sourceDir = path.join(tempDir, 'source');
       const targetDir = path.join(tempDir, 'target');
       await fs.ensureDir(sourceDir);
@@ -286,12 +307,23 @@ describe('profiles.ts', () => {
       expect(results.map((r) => r.name)).toContain('settings.json');
       expect(results.map((r) => r.name)).toContain('hooks');
 
-      // Verify directory used symlink method
+      // Directory always uses symlink (junction on Windows)
       const hooksResult = results.find((r) => r.name === 'hooks');
       expect(hooksResult?.method).toBe('symlink');
 
-      const stat = await fs.lstat(path.join(targetDir, 'settings.json'));
-      expect(stat.isSymbolicLink()).toBe(true);
+      // File method depends on platform: 'link' (hardlink) on Windows, 'symlink' elsewhere
+      const settingsResult = results.find((r) => r.name === 'settings.json');
+      if (isWindows) {
+        expect(settingsResult?.method).toBe('link');
+        // Verify hardlink by checking link count (fs-extra doesn't expose this directly)
+        // The file should exist and be identical to the source
+        const destContent = await fs.readFile(path.join(targetDir, 'settings.json'), 'utf-8');
+        expect(destContent).toBe('{"key":"value"}');
+      } else {
+        expect(settingsResult?.method).toBe('symlink');
+        const stat = await fs.lstat(path.join(targetDir, 'settings.json'));
+        expect(stat.isSymbolicLink()).toBe(true);
+      }
     });
 
     it('should skip items that do not exist in source', async () => {

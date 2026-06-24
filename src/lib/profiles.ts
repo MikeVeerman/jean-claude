@@ -57,35 +57,11 @@ export function getAllPowerShellProfilePaths(): string[] {
 }
 
 /**
- * Returns the actual PowerShell profile path by querying PowerShell itself.
- * On some Windows systems (e.g. OneDrive sync, VS Code), $PROFILE is redirected
- * to a custom location like `~\OneDrive\Documents\WindowsPowerShell\Microsoft.VSCode_profile.ps1`.
- * This function ensures we always write to the file PowerShell actually loads.
- */
-export function getPowerShellProfilePath(): string | null {
-  if (detectPlatform() !== 'win32') return null;
-  try {
-    const output = execSync('powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Write-Output $PROFILE"', {
-      encoding: 'utf-8',
-      maxBuffer: 1024 * 1024,
-    }).trim();
-    if (output && output.length > 0) {
-      return output;
-    }
-  } catch {
-    // Fallback below
-  }
-  return null;
-}
-
-/**
  * Items that get symlinked from the main ~/.claude/ into profile directories.
  * Everything else in the profile dir is profile-specific.
  */
 export const SHARED_ITEMS = [
   { name: 'settings.json', type: 'file' as const },
-  { name: 'statusline.sh', type: 'file' as const },
-  { name: 'statusline.ps1', type: 'file' as const },
   { name: 'hooks', type: 'directory' as const },
   { name: 'agents', type: 'directory' as const },
   { name: 'skills', type: 'directory' as const },
@@ -115,26 +91,6 @@ export async function saveProfiles(config: ProfileConfig): Promise<void> {
 export function getProfileConfigDir(name: string): string {
   const home = os.homedir();
   return path.join(home, `.claude-${name}`);
-}
-
-/**
- * Check if Git Bash is installed on Windows.
- * Git Bash ships with Git for Windows and provides bash.exe in the installation path.
- */
-export function isGitBashInstalled(): boolean {
-  if (detectPlatform() !== 'win32') return false;
-  // Check common Git for Windows installation paths for bash.exe
-  const gitBashPaths = [
-    process.env['PROGRAMFILES(X64)'],
-    process.env['PROGRAMFILES'],
-    process.env['LOCALAPPDATA'] || '',
-  ];
-  const bashExePaths = [
-    path.join(gitBashPaths[0] || '', 'Git', 'bin', 'bash.exe'),
-    path.join(gitBashPaths[1] || '', 'Git', 'bin', 'bash.exe'),
-    path.join(gitBashPaths[2] || '', 'Program Files\\Git\\bin\\bash.exe'),
-  ];
-  return bashExePaths.some(p => p && p.length > 0 && fs.existsSync(p));
 }
 
 export interface CreateProfileOptions {
@@ -178,9 +134,20 @@ export async function createProfile(
     throw err;
   }
 
-  // Create symlinks for shared items (including statusline.sh)
+  // Create symlinks for shared items
   const { claudeConfigDir } = getConfigPaths();
   await createSymlinks(claudeConfigDir, configDir);
+
+  // Optionally symlink statusline scripts from main config
+  if (shareStatusline) {
+    for (const statuslineFile of ['statusline.sh', 'statusline.ps1']) {
+      const sourcePath = path.join(claudeConfigDir, statuslineFile);
+      const targetPath = path.join(configDir, statuslineFile);
+      if (await fs.pathExists(sourcePath)) {
+        await fs.symlink(sourcePath, targetPath);
+      }
+    }
+  }
 
   // Handle CLAUDE.md: symlink from main config or create independent file
   const claudeMdPath = path.join(configDir, 'CLAUDE.md');
@@ -211,16 +178,18 @@ export async function createProfile(
 export type SharedItemResult = {
   /** The name of the item (e.g., 'settings.json', 'hooks') */
   name: string;
-  /** Whether the item was symlinked or copied */
-  method: 'symlink' | 'copy';
+  /** Whether the item was symlinked, hardlinked, or copied */
+  method: 'symlink' | 'link' | 'copy';
 };
 
 /**
- * Create symlinks (or copies as fallback) for shared items from sourceDir into targetDir.
+ * Create links (symlinks, hardlinks, junctions, or copies as fallback) for shared items
+ * from sourceDir into targetDir.
  *
  * Platform behavior:
  * - **Directories**: Always use junctions on Windows (`junction`), direct symlinks elsewhere.
- * - **Files on Windows**: Try symlink first; fall back to copy when EPERM (no Developer Mode).
+ * - **Files on Windows**: Use hardlinks (`fs.link()`) — no Developer Mode or admin required.
+ *   Falls back to copy on ENOENT (e.g., cross-volume).
  * - **Files on macOS/Linux**: Direct symlink.
  */
 export async function createSymlinks(
@@ -243,28 +212,42 @@ export async function createSymlinks(
       await fs.remove(targetPath);
     }
 
-    let method: 'symlink' | 'copy' = 'symlink';
+    let method: 'symlink' | 'link' | 'copy' = 'symlink';
 
     // On Windows, use directory junctions for directories to avoid admin
     // privilege requirements. fs-extra's fs.symlink with type:'dir' creates
     // junctions automatically on Windows.
     if (item.type === 'directory') {
       await fs.symlink(sourcePath, targetPath, 'junction');
-    } else {
+      method = 'symlink';
+    } else if (detectPlatform() === 'win32') {
+      // On Windows, use hardlinks for files — they require no special privileges
+      // (unlike symlinks which need Developer Mode or admin). Hardlinks only work
+      // within the same volume; if cross-volume, fall back to copy.
       try {
-        await fs.symlink(sourcePath, targetPath);
-      } catch (symlinkErr: unknown) {
-        // File symlinks on Windows require Developer Mode or admin privileges.
-        // Fall back to copying the file — the profile still works, just not as a symlink.
-        const isEPERM =
-          symlinkErr && typeof symlinkErr === 'object' && 'code' in symlinkErr
-            && (symlinkErr as { code: string }).code === 'EPERM';
-        if (isEPERM) {
+        await fs.link(sourcePath, targetPath);
+        method = 'link';
+      } catch (linkErr: unknown) {
+        // Hardlinks can fail with ENOENT (cross-volume) or EPERM (permission denied).
+        // Fall back to copying the file — the profile still works, just not linked.
+        const isLinkError =
+          linkErr && typeof linkErr === 'object' && 'code' in linkErr
+            && (linkErr as { code: string }).code === 'ENOENT';
+        if (isLinkError) {
           method = 'copy';
           await fs.copy(sourcePath, targetPath);
         } else {
-          throw symlinkErr;
+          throw linkErr;
         }
+      }
+    } else {
+      // macOS/Linux: direct symlink
+      try {
+        await fs.symlink(sourcePath, targetPath);
+        method = 'symlink';
+      } catch (symlinkErr: unknown) {
+        // Unexpected error — rethrow
+        throw symlinkErr;
       }
     }
     results.push({ name: item.name, method });
@@ -276,6 +259,7 @@ export async function createSymlinks(
 /**
  * Legacy alias returning just the names for backwards compatibility.
  * @deprecated Use {@link createSymlinks} and check `.method` for details.
+ *               On Windows, `.method` is 'link' (hardlink) for files or 'symlink' (junction) for directories.
  */
 export async function createSymlinksAndGetNames(
   sourceDir: string,
@@ -468,7 +452,8 @@ export function detectShellConfigFiles(): Array<{ name: string; value: string }>
   // On Windows, prioritize PowerShell profile, then Git Bash/WSL options
   if (platform === 'win32') {
     // Always offer the actual $PROFILE first (it may be redirected via OneDrive, VS Code, etc.)
-    const actualProfile = getPowerShellProfilePath();
+    const psProfiles = getAllPowerShellProfilePaths();
+    const actualProfile = psProfiles.length > 0 ? psProfiles[0] : null;
     if (actualProfile && fs.existsSync(actualProfile)) {
       options.push({ name: `PowerShell ($PROFILE) — actual: ${actualProfile}`, value: 'Microsoft.PowerShell_profile.ps1' });
     } else if (actualProfile) {

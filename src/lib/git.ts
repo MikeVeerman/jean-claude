@@ -92,21 +92,59 @@ export async function getGitStatus(dir: string): Promise<GitStatus> {
   };
 }
 
+/**
+ * Pull from the upstream tracking branch, rebasing local commits on top of it.
+ *
+ * A plain `git pull` refuses to integrate when local and remote history have
+ * diverged (`fatal: Need to specify how to reconcile divergent branches`),
+ * which happens routinely when two machines sync without pulling in between.
+ * Rebasing keeps the history linear. Divergence that conflicts only on
+ * `meta.json` (per-machine metadata that is regenerated on every sync) is
+ * resolved automatically: `--ours` during a rebase is the upstream side, so
+ * the remote copy is kept — which side wins is immaterial since it is
+ * rewritten on the next sync. Any other conflict aborts the rebase and is
+ * surfaced to the caller.
+ */
+async function pullWithRebase(git: SimpleGit): Promise<void> {
+  try {
+    await git.pull(['--rebase']);
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (errMsg.includes('CONFLICT') || errMsg.includes('conflict')) {
+      const conflictStatus = await git.status();
+      const conflictFiles = conflictStatus.conflicted;
+      if (conflictFiles.length === 1 && conflictFiles[0] === 'meta.json') {
+        await git.checkout(['--ours', 'meta.json']);
+        await git.add('meta.json');
+        await git.env('GIT_EDITOR', 'true').rebase(['--continue']);
+        return;
+      }
+      await git.rebase(['--abort']);
+    }
+    throw err;
+  }
+}
+
 export async function pull(dir: string): Promise<{ success: boolean; message: string }> {
   const git = createGit(dir);
 
   try {
-    const result = await git.pull();
-    if (result.summary.changes === 0) {
+    const before = await git.revparse(['HEAD']);
+    await pullWithRebase(git);
+    const after = await git.revparse(['HEAD']);
+
+    if (before === after) {
       return { success: true, message: 'Already up to date.' };
     }
+
+    const diff = await git.diffSummary([`${before}..${after}`]);
     return {
       success: true,
-      message: `Updated: ${result.summary.insertions} insertions, ${result.summary.deletions} deletions`,
+      message: `Updated: ${diff.insertions} insertions, ${diff.deletions} deletions`,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    if (message.includes('CONFLICT')) {
+    if (message.includes('CONFLICT') || message.includes('conflict')) {
       throw new JeanClaudeError(
         'Merge conflict detected',
         ErrorCode.MERGE_CONFLICT,
@@ -146,25 +184,15 @@ export async function commitAndPush(
       // Only pull --rebase if we have an upstream tracking branch
       if (status.tracking) {
         try {
-          await git.pull(['--rebase']);
+          await pullWithRebase(git);
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
           if (errMsg.includes('CONFLICT') || errMsg.includes('conflict')) {
-            // Check if meta.json is the only conflicting file — auto-resolve it
-            const conflictStatus = await git.status();
-            const conflictFiles = conflictStatus.conflicted;
-            if (conflictFiles.length === 1 && conflictFiles[0] === 'meta.json') {
-              await git.checkout(['--ours', 'meta.json']);
-              await git.add('meta.json');
-              await git.env('GIT_EDITOR', 'true').rebase(['--continue']);
-            } else {
-              await git.rebase(['--abort']);
-              throw new JeanClaudeError(
-                `Rebase failed due to conflicts: ${errMsg}`,
-                ErrorCode.MERGE_CONFLICT,
-                'Try running "jean-claude sync pull" to resolve conflicts.'
-              );
-            }
+            throw new JeanClaudeError(
+              `Rebase failed due to conflicts: ${errMsg}`,
+              ErrorCode.MERGE_CONFLICT,
+              'Try running "jean-claude sync pull" to resolve conflicts.'
+            );
           } else if (errMsg.includes('no such ref') || errMsg.includes("Couldn't find remote ref")) {
             // Remote branch doesn't exist yet — skip rebase, first push will create it
           } else {

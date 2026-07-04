@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
-import { getConfigPaths, getJeanClaudeDir } from './paths.js';
+import { getConfigPaths, getJeanClaudeDir, expandPath, contractPath } from './paths.js';
 import { JeanClaudeError, ErrorCode } from '../types/index.js';
 import type { ProfileConfig, Profile } from '../types/index.js';
 
@@ -27,7 +27,12 @@ function getProfilesPath(): string {
 export async function loadProfiles(): Promise<ProfileConfig> {
   const profilesPath = getProfilesPath();
   if (await fs.pathExists(profilesPath)) {
-    return await fs.readJson(profilesPath);
+    const config: ProfileConfig = await fs.readJson(profilesPath);
+    // Expand ~ to absolute paths for runtime use
+    for (const profile of Object.values(config.profiles)) {
+      profile.configDir = expandPath(profile.configDir);
+    }
+    return config;
   }
   return { profiles: {} };
 }
@@ -35,7 +40,16 @@ export async function loadProfiles(): Promise<ProfileConfig> {
 export async function saveProfiles(config: ProfileConfig): Promise<void> {
   const profilesPath = getProfilesPath();
   const tmpPath = `${profilesPath}.${process.pid}.tmp`;
-  await fs.writeJson(tmpPath, config, { spaces: 2 });
+  // Store paths with ~ for portability across machines
+  const portableConfig: ProfileConfig = {
+    profiles: Object.fromEntries(
+      Object.entries(config.profiles).map(([name, profile]) => [
+        name,
+        { ...profile, configDir: contractPath(profile.configDir) },
+      ])
+    ),
+  };
+  await fs.writeJson(tmpPath, portableConfig, { spaces: 2 });
   await fs.rename(tmpPath, profilesPath);
 }
 

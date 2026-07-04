@@ -3,7 +3,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
 import { simpleGit } from 'simple-git';
-import { commitAndPush } from '../../../src/lib/git.js';
+import { commitAndPush, pull } from '../../../src/lib/git.js';
 
 describe('git.ts', () => {
   let tempDir: string;
@@ -144,6 +144,124 @@ describe('git.ts', () => {
       const messages = log.all.map((c) => c.message);
       expect(messages).toContain('machine1 commit');
       expect(messages).toContain('machine2 commit');
+    });
+  });
+
+  describe('pull', () => {
+    // Reproduces the "Need to specify how to reconcile divergent branches"
+    // failure: local has an unpushed commit while the remote has moved on, so
+    // history has diverged. A plain `git pull` aborts; pull() must rebase.
+    it('should reconcile divergent branches by rebasing', async () => {
+      const machine1Dir = path.join(tempDir, 'machine1');
+      const machine2Dir = path.join(tempDir, 'machine2');
+      const bareDir = path.join(tempDir, 'remote.git');
+
+      // machine1: initial commit, pushed to a shared bare remote
+      await fs.ensureDir(machine1Dir);
+      const git1 = simpleGit(machine1Dir);
+      await git1.init();
+      await git1.addConfig('user.email', 'test@test.com');
+      await git1.addConfig('user.name', 'Test');
+      await fs.writeFile(path.join(machine1Dir, 'init.txt'), 'init');
+      await git1.add('-A');
+      await git1.commit('initial commit');
+      await simpleGit().clone(machine1Dir, bareDir, ['--bare']);
+      try { await git1.removeRemote('origin'); } catch { /* ignore */ }
+      await git1.addRemote('origin', bareDir);
+      await git1.push(['-u', 'origin', 'HEAD']);
+
+      // machine2 clones, commits and pushes — advancing the remote
+      await simpleGit().clone(bareDir, machine2Dir);
+      const git2 = simpleGit(machine2Dir);
+      await git2.addConfig('user.email', 'test@test.com');
+      await git2.addConfig('user.name', 'Test');
+      await fs.writeFile(path.join(machine2Dir, 'machine2.txt'), 'from machine 2');
+      await git2.add('-A');
+      await git2.commit('machine2 commit');
+      await git2.push();
+
+      // machine1 makes its own local commit WITHOUT pulling first — history
+      // has now diverged (1 ahead, 1 behind).
+      await fs.writeFile(path.join(machine1Dir, 'machine1.txt'), 'from machine 1');
+      await git1.add('-A');
+      await git1.commit('machine1 commit');
+
+      // A bare `git pull` here fails; pull() should rebase and succeed.
+      const result = await pull(machine1Dir);
+      expect(result.success).toBe(true);
+
+      const log = await git1.log();
+      const messages = log.all.map((c) => c.message);
+      expect(messages).toContain('machine1 commit');
+      expect(messages).toContain('machine2 commit');
+    });
+
+    it('should auto-resolve a meta.json-only conflict on divergence', async () => {
+      const machine1Dir = path.join(tempDir, 'machine1');
+      const machine2Dir = path.join(tempDir, 'machine2');
+      const bareDir = path.join(tempDir, 'remote.git');
+
+      // Shared history that already contains meta.json
+      await fs.ensureDir(machine1Dir);
+      const git1 = simpleGit(machine1Dir);
+      await git1.init();
+      await git1.addConfig('user.email', 'test@test.com');
+      await git1.addConfig('user.name', 'Test');
+      await fs.writeFile(path.join(machine1Dir, 'meta.json'), '{"lastSync":"base"}');
+      await git1.add('-A');
+      await git1.commit('initial commit');
+      await simpleGit().clone(machine1Dir, bareDir, ['--bare']);
+      try { await git1.removeRemote('origin'); } catch { /* ignore */ }
+      await git1.addRemote('origin', bareDir);
+      await git1.push(['-u', 'origin', 'HEAD']);
+
+      // machine2 changes meta.json and pushes
+      await simpleGit().clone(bareDir, machine2Dir);
+      const git2 = simpleGit(machine2Dir);
+      await git2.addConfig('user.email', 'test@test.com');
+      await git2.addConfig('user.name', 'Test');
+      await fs.writeFile(path.join(machine2Dir, 'meta.json'), '{"lastSync":"machine2"}');
+      await git2.add('-A');
+      await git2.commit('machine2 meta update');
+      await git2.push();
+
+      // machine1 changes meta.json to a different value — divergent + conflicting
+      await fs.writeFile(path.join(machine1Dir, 'meta.json'), '{"lastSync":"machine1"}');
+      await git1.add('-A');
+      await git1.commit('machine1 meta update');
+
+      const result = await pull(machine1Dir);
+      expect(result.success).toBe(true);
+
+      // The conflict is auto-resolved and the rebase completes cleanly — no
+      // lingering conflict markers or in-progress rebase. During a rebase
+      // `--ours` is the upstream side, so the remote copy is kept (immaterial
+      // in practice since meta.json is regenerated on the next sync).
+      const status = await git1.status();
+      expect(status.conflicted).toEqual([]);
+      const meta = await fs.readFile(path.join(machine1Dir, 'meta.json'), 'utf-8');
+      expect(meta).toContain('machine2');
+    });
+
+    it('should report already up to date when there is nothing to pull', async () => {
+      const machine1Dir = path.join(tempDir, 'machine1');
+      const bareDir = path.join(tempDir, 'remote.git');
+
+      await fs.ensureDir(machine1Dir);
+      const git1 = simpleGit(machine1Dir);
+      await git1.init();
+      await git1.addConfig('user.email', 'test@test.com');
+      await git1.addConfig('user.name', 'Test');
+      await fs.writeFile(path.join(machine1Dir, 'init.txt'), 'init');
+      await git1.add('-A');
+      await git1.commit('initial commit');
+      await simpleGit().clone(machine1Dir, bareDir, ['--bare']);
+      try { await git1.removeRemote('origin'); } catch { /* ignore */ }
+      await git1.addRemote('origin', bareDir);
+      await git1.push(['-u', 'origin', 'HEAD']);
+
+      const result = await pull(machine1Dir);
+      expect(result).toEqual({ success: true, message: 'Already up to date.' });
     });
   });
 });

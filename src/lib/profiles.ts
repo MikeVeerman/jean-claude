@@ -1,10 +1,9 @@
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
-import { getConfigPaths, getJeanClaudeDir } from './paths.js';
+import { getConfigPaths, getJeanClaudeDir, expandPath, contractPath } from './paths.js';
 import { JeanClaudeError, ErrorCode } from '../types/index.js';
 import type { ProfileConfig, Profile } from '../types/index.js';
-import { expandPath, formatPath } from '../utils/logger.js';
 
 const PROFILES_FILE = 'profiles.json';
 
@@ -46,7 +45,7 @@ export async function saveProfiles(config: ProfileConfig): Promise<void> {
     profiles: Object.fromEntries(
       Object.entries(config.profiles).map(([name, profile]) => [
         name,
-        { ...profile, configDir: formatPath(profile.configDir) },
+        { ...profile, configDir: contractPath(profile.configDir) },
       ])
     ),
   };

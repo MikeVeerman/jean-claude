@@ -3,8 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import os from 'os';
 import type { FileMapping, SyncResult, MetaJson } from '../types/index.js';
-import { getConfigPaths } from './paths.js';
-import { expandPath, formatPath } from '../utils/logger.js';
+import { getConfigPaths, expandPath, contractPath } from './paths.js';
 
 export const FILE_MAPPINGS: FileMapping[] = [
   {
@@ -263,7 +262,7 @@ export function createMetaJson(claudeConfigPath: string): MetaJson {
     lastSync: null,
     machineId: `${hostname}-${machineId}`,
     platform,
-    claudeConfigPath: formatPath(claudeConfigPath),
+    claudeConfigPath,
   };
 }
 
@@ -286,7 +285,8 @@ export async function writeMetaJson(
   meta: MetaJson
 ): Promise<void> {
   const metaPath = path.join(jeanClaudeDir, 'meta.json');
-  const portableMeta = { ...meta, claudeConfigPath: formatPath(meta.claudeConfigPath) };
+  // Store the path with ~ so meta.json stays portable across machines
+  const portableMeta = { ...meta, claudeConfigPath: contractPath(meta.claudeConfigPath) };
   await fs.writeJson(metaPath, portableMeta, { spaces: 2 });
 }
 

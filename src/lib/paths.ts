@@ -54,3 +54,33 @@ export function ensureDir(dirPath: string): void {
     fs.mkdirSync(dirPath, { recursive: true });
   }
 }
+
+/**
+ * Expand a leading ~ to the user's home directory.
+ * Inverse of contractPath; used when reading config files from disk.
+ * Passes through absolute paths, relative paths, and falsy values unchanged.
+ */
+export function expandPath(p: string): string {
+  if (!p) return p;
+  if (p === '~') return os.homedir();
+  if (p.startsWith('~' + path.sep)) {
+    return path.join(os.homedir(), p.slice(2));
+  }
+  return p;
+}
+
+/**
+ * Replace the user's home directory prefix with ~ so config files stay
+ * portable across machines. Only contracts at a path boundary: a sibling
+ * directory like /Users/mikeshared is left untouched, since ~shared/...
+ * would not survive the round-trip through expandPath.
+ */
+export function contractPath(p: string): string {
+  if (!p) return p;
+  const home = os.homedir();
+  if (p === home) return '~';
+  if (p.startsWith(home + path.sep)) {
+    return '~' + p.slice(home.length);
+  }
+  return p;
+}

@@ -1,6 +1,5 @@
 import chalk from 'chalk';
-import os from 'os';
-import path from 'path';
+import { contractPath } from '../lib/paths.js';
 
 const orange = chalk.hex('#FF6B4A');
 
@@ -50,20 +49,5 @@ export const logger = {
 };
 
 export function formatPath(p: string): string {
-  const home = process.env.HOME || '';
-  if (home && p.startsWith(home)) {
-    return '~' + p.slice(home.length);
-  }
-  return p;
-}
-
-/**
- * Expand a leading ~ to the user's home directory.
- * Enables portable paths in config files across machines.
- */
-export function expandPath(p: string): string {
-  if (p.startsWith('~/') || p === '~') {
-    return path.join(os.homedir(), p.slice(1));
-  }
-  return p;
+  return contractPath(p);
 }

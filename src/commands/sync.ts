@@ -3,7 +3,8 @@ import fs from 'fs-extra';
 import os from 'os';
 import chalk from 'chalk';
 import { logger, formatPath } from '../utils/logger.js';
-import { getConfigPaths } from '../lib/paths.js';
+import { getConfigPaths, detectPlatform } from '../lib/paths.js';
+import { relinkAllProfiles } from '../lib/profiles.js';
 import { isGitRepo, getGitStatus, commitAndPush, pull, hasMergeConflicts, resetHard, cleanUntracked } from '../lib/git.js';
 import { syncFromClaudeConfig, syncToClaudeConfig, updateLastSync, compareFiles, readMetaJson } from '../lib/sync.js';
 import { setupGitSync } from '../lib/sync-setup.js';
@@ -183,6 +184,16 @@ export async function handleSyncPull(options: { force?: boolean } = {}): Promise
   logger.step(2, 2, `Applying to ${formatPath(claudeConfigDir)}...`);
   const results = await syncToClaudeConfig(jeanClaudeDir, claudeConfigDir);
   const applied = results.filter((r) => r.action !== 'skipped');
+
+  // On Windows, profiles share files via hardlinks, which detach when the
+  // source file is replaced by the sync — re-link all profiles so they see
+  // the updated config.
+  if (detectPlatform() === 'win32') {
+    const relinked = await relinkAllProfiles();
+    if (relinked.length > 0) {
+      logger.success(`Re-linked profile(s): ${relinked.join(', ')}`);
+    }
+  }
 
   // Update last sync time
   await updateLastSync(jeanClaudeDir);

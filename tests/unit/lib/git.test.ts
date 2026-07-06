@@ -59,7 +59,9 @@ describe('git.ts', () => {
       expect(log.latest?.message).toBe('add file');
     });
 
-    it('should skip pull --rebase when there is no upstream tracking branch (#36)', async () => {
+    // Real git operations (clone, push, pull) are slow on Windows runners —
+    // allow more than the 5s default
+    it('should skip pull --rebase when there is no upstream tracking branch (#36)', { timeout: 30000 }, async () => {
       // Create a local repo
       const localDir = path.join(tempDir, 'local');
       await fs.ensureDir(localDir);
@@ -95,7 +97,7 @@ describe('git.ts', () => {
       expect(log.latest?.message).toBe('first push no upstream');
     });
 
-    it('should pull --rebase before push when upstream tracking branch exists (#22)', async () => {
+    it('should pull --rebase before push when upstream tracking branch exists (#22)', { timeout: 30000 }, async () => {
       // Simulate two machines sharing a bare remote
       const machine1Dir = path.join(tempDir, 'machine1');
       const machine2Dir = path.join(tempDir, 'machine2');

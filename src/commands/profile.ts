@@ -13,10 +13,11 @@ import {
   removeShellAlias,
   detectShellConfigFiles,
   refreshSymlinks,
+  checkSharedItemHealth,
   SHARED_ITEMS,
   type CreateProfileOptions,
 } from '../lib/profiles.js';
-import { getJeanClaudeDir } from '../lib/paths.js';
+import { getJeanClaudeDir, getConfigPaths, detectPlatform } from '../lib/paths.js';
 import { JeanClaudeError, ErrorCode } from '../types/index.js';
 import fs from 'fs-extra';
 
@@ -132,8 +133,10 @@ const profileCreateCommand = new Command('create')
       shellFile = await select('Add alias to which shell config?', shellOptions);
     }
 
-    await installShellAlias(name, profile, shellFile);
-    logger.success(`Alias added to ~/${shellFile}`);
+    const writtenFiles = await installShellAlias(name, profile, shellFile);
+    for (const writtenFile of writtenFiles) {
+      logger.success(`Alias added to ${formatPath(writtenFile)}`);
+    }
 
     // Done
     logger.step(3, 3, 'Done!');
@@ -185,27 +188,22 @@ const profileListCommand = new Command('list')
         ['Status', status],
       ]);
 
-      // Check symlink health
+      // Check link health: broken symlinks and detached hardlinks/stale copies
       if (exists) {
-        const broken: string[] = [];
-        for (const item of SHARED_ITEMS) {
-          const itemPath = `${profile.configDir}/${item.name}`;
-          try {
-            const stat = await fs.lstat(itemPath);
-            if (stat.isSymbolicLink()) {
-              const target = await fs.readlink(itemPath);
-              if (!(await fs.pathExists(target))) {
-                broken.push(item.name);
-              }
-            }
-          } catch {
-            // Item doesn't exist in profile, that's ok if source doesn't exist either
-          }
-        }
+        const { claudeConfigDir } = getConfigPaths();
+        const issues = await checkSharedItemHealth(claudeConfigDir, profile.configDir);
+        const broken = issues.filter((i) => i.kind === 'broken').map((i) => i.name);
+        const stale = issues.filter((i) => i.kind === 'stale').map((i) => i.name);
         if (broken.length > 0) {
           logger.table([
             ['Symlinks', chalk.yellow(`broken: ${broken.join(', ')}`)],
           ]);
+        }
+        if (stale.length > 0) {
+          logger.table([
+            ['Links', chalk.yellow(`stale: ${stale.join(', ')}`)],
+          ]);
+          logger.dim(`  Run 'jean-claude profile refresh ${name}' to re-link.`);
         }
       }
       console.log();
@@ -267,10 +265,17 @@ const profileDeleteCommand = new Command('delete')
     // Remove shell alias
     logger.step(2, 2, 'Cleaning up shell aliases...');
     const shellFiles = ['.zshrc', '.bashrc', '.bash_profile'];
+    if (detectPlatform() === 'win32') {
+      // Covers all PowerShell profiles (PS 5.1 and PS 7.x) via removeShellAlias
+      shellFiles.push('Microsoft.PowerShell_profile.ps1');
+    }
     for (const shellFile of shellFiles) {
       const removed = await removeShellAlias(name, shellFile);
       if (removed) {
-        logger.success(`Removed alias from ~/${shellFile}`);
+        const label = shellFile.endsWith('.ps1')
+          ? 'PowerShell profile(s)'
+          : `~/${shellFile}`;
+        logger.success(`Removed alias from ${label}`);
       }
     }
 

@@ -102,11 +102,9 @@ export async function createProfile(
   name: string,
   options: CreateProfileOptions = {}
 ): Promise<Profile> {
-  const platform = detectPlatform();
   // Default: never share statusline scripts unless explicitly requested.
   // On Windows both .sh and .ps1 can coexist (Git Bash + PowerShell).
-  const shareStatuslineDefault = false;
-  const { shareStatusline = shareStatuslineDefault, shareClaudeMd = false } = options;
+  const { shareStatusline = false, shareClaudeMd = false } = options;
   const config = await loadProfiles();
 
   if (config.profiles[name]) {
@@ -207,10 +205,9 @@ export async function createSymlinks(
       continue;
     }
 
-    // Remove existing target if any (shouldn't happen on create, but safe)
-    if (await fs.pathExists(targetPath)) {
-      await fs.remove(targetPath);
-    }
+    // Remove existing target if any (also handles broken symlinks, which
+    // fs.pathExists would miss because it follows the link)
+    await fs.remove(targetPath);
 
     let method: 'symlink' | 'link' | 'copy' = 'symlink';
 
@@ -228,12 +225,14 @@ export async function createSymlinks(
         await fs.link(sourcePath, targetPath);
         method = 'link';
       } catch (linkErr: unknown) {
-        // Hardlinks can fail with ENOENT (cross-volume) or EPERM (permission denied).
+        // Hardlinks fail with EXDEV when source and target are on different
+        // volumes, or EPERM when the filesystem denies hardlink creation.
         // Fall back to copying the file — the profile still works, just not linked.
-        const isLinkError =
+        const code =
           linkErr && typeof linkErr === 'object' && 'code' in linkErr
-            && (linkErr as { code: string }).code === 'ENOENT';
-        if (isLinkError) {
+            ? (linkErr as { code: string }).code
+            : undefined;
+        if (code === 'EXDEV' || code === 'EPERM') {
           method = 'copy';
           await fs.copy(sourcePath, targetPath);
         } else {
@@ -242,31 +241,13 @@ export async function createSymlinks(
       }
     } else {
       // macOS/Linux: direct symlink
-      try {
-        await fs.symlink(sourcePath, targetPath);
-        method = 'symlink';
-      } catch (symlinkErr: unknown) {
-        // Unexpected error — rethrow
-        throw symlinkErr;
-      }
+      await fs.symlink(sourcePath, targetPath);
+      method = 'symlink';
     }
     results.push({ name: item.name, method });
   }
 
   return results;
-}
-
-/**
- * Legacy alias returning just the names for backwards compatibility.
- * @deprecated Use {@link createSymlinks} and check `.method` for details.
- *               On Windows, `.method` is 'link' (hardlink) for files or 'symlink' (junction) for directories.
- */
-export async function createSymlinksAndGetNames(
-  sourceDir: string,
-  targetDir: string
-): Promise<string[]> {
-  const results = await createSymlinks(sourceDir, targetDir);
-  return results.map((r) => r.name);
 }
 
 export async function refreshSymlinks(name: string): Promise<string[]> {
@@ -284,6 +265,93 @@ export async function refreshSymlinks(name: string): Promise<string[]> {
   const { claudeConfigDir } = getConfigPaths();
   const results = await createSymlinks(claudeConfigDir, profile.configDir);
   return results.map((r) => r.name);
+}
+
+/**
+ * Re-create links for all profiles. Needed on Windows after a sync pull:
+ * hardlinks share an inode with the file as it existed at link time, so when
+ * the source file in ~/.claude is replaced, every profile's hardlink keeps
+ * pointing at the old content. Returns the names of the profiles re-linked.
+ */
+export async function relinkAllProfiles(): Promise<string[]> {
+  const config = await loadProfiles();
+  const { claudeConfigDir } = getConfigPaths();
+  const relinked: string[] = [];
+
+  for (const [name, profile] of Object.entries(config.profiles)) {
+    if (await fs.pathExists(profile.configDir)) {
+      await createSymlinks(claudeConfigDir, profile.configDir);
+      relinked.push(name);
+    }
+  }
+
+  return relinked;
+}
+
+export type SharedItemIssue = {
+  name: string;
+  /** 'broken' — symlink whose target no longer exists; 'stale' — file no longer linked to the source (detached hardlink or diverged copy) */
+  kind: 'broken' | 'stale';
+};
+
+/**
+ * Check the health of a profile's shared items.
+ * - Symlinks/junctions: broken if the link target no longer exists.
+ * - Regular files (Windows hardlinks or copy fallback): stale if they no
+ *   longer point at the same inode as the source — e.g. after the source was
+ *   replaced by a sync pull. Fixable with `jean-claude profile refresh`.
+ */
+export async function checkSharedItemHealth(
+  sourceDir: string,
+  profileDir: string
+): Promise<SharedItemIssue[]> {
+  const issues: SharedItemIssue[] = [];
+
+  for (const item of SHARED_ITEMS) {
+    const sourcePath = path.join(sourceDir, item.name);
+    const targetPath = path.join(profileDir, item.name);
+
+    let isSymlink: boolean;
+    try {
+      isSymlink = (await fs.lstat(targetPath)).isSymbolicLink();
+    } catch {
+      // Item doesn't exist in profile — ok if the source doesn't exist either
+      continue;
+    }
+
+    if (isSymlink) {
+      const linkTarget = await fs.readlink(targetPath);
+      if (!(await fs.pathExists(linkTarget))) {
+        issues.push({ name: item.name, kind: 'broken' });
+      }
+      continue;
+    }
+
+    // Regular file: on Windows this should be a hardlink to (or copy of) the
+    // source. Same inode means the hardlink is intact. Different inode is fine
+    // for the copy fallback as long as the content still matches — flag only
+    // when the profile's file has drifted from the source.
+    if (item.type === 'file' && (await fs.pathExists(sourcePath))) {
+      try {
+        const sourceStat = await fs.stat(sourcePath);
+        const targetStat = await fs.stat(targetPath);
+        if (sourceStat.ino === targetStat.ino && sourceStat.dev === targetStat.dev) {
+          continue;
+        }
+        const [sourceContent, targetContent] = await Promise.all([
+          fs.readFile(sourcePath),
+          fs.readFile(targetPath),
+        ]);
+        if (!sourceContent.equals(targetContent)) {
+          issues.push({ name: item.name, kind: 'stale' });
+        }
+      } catch {
+        // Race with concurrent deletion — skip
+      }
+    }
+  }
+
+  return issues;
 }
 
 export async function deleteProfile(name: string): Promise<Profile> {
@@ -320,12 +388,16 @@ export function getShellAliasLine(
   shellConfigFile: string = '.bashrc'
 ): string {
   const isPowerShell = shellConfigFile.endsWith('.ps1');
-  const escDir = profile.configDir.replace(/\\/g, '\\\\');
 
   if (isPowerShell) {
-    return `function ${profile.alias} { $env:CLAUDE_CONFIG_DIR="${escDir}"; claude @args }`;
+    // Backslash is NOT an escape character in PowerShell — use the path as-is,
+    // in a single-quoted string where only single quotes need doubling.
+    const psDir = profile.configDir.replace(/'/g, "''");
+    return `function ${profile.alias} { $env:CLAUDE_CONFIG_DIR='${psDir}'; claude @args }`;
   }
 
+  // Bash/Zsh: inside double quotes, backslashes must be escaped
+  const escDir = profile.configDir.replace(/\\/g, '\\\\');
   return `alias ${profile.alias}='CLAUDE_CONFIG_DIR="${escDir}" claude'`;
 }
 
@@ -364,11 +436,17 @@ export function getReloadInstruction(shellConfigFile: string): string {
   return `source ~/${shellConfigFile}`;
 }
 
+/**
+ * Install the shell alias for a profile.
+ * Returns the paths of the config files that were written — on Windows with a
+ * .ps1 target this covers ALL PowerShell profiles (PS 5.1 and PS 7.x, which
+ * may live in different locations, e.g. OneDrive redirects).
+ */
 export async function installShellAlias(
   name: string,
   profile: Profile,
   shellConfigFile: string
-): Promise<void> {
+): Promise<string[]> {
   const block = getShellAliasBlock(name, profile, shellConfigFile);
 
   if (detectPlatform() === 'win32' && shellConfigFile.endsWith('.ps1')) {
@@ -390,7 +468,7 @@ export async function installShellAlias(
       // Append alias block
       await fs.appendFile(rcPath, block);
     }
-    return;
+    return allPaths;
   }
 
   // Non-PowerShell: use legacy path
@@ -400,10 +478,11 @@ export async function installShellAlias(
     if (content.includes(`jean-claude profile: ${name}`)) {
       const updated = content.replace(profileAliasRegex(name), block);
       await fs.writeFile(rcPath, updated);
-      return;
+      return [rcPath];
     }
   }
   await fs.appendFile(rcPath, block);
+  return [rcPath];
 }
 
 export async function removeShellAlias(
@@ -472,11 +551,8 @@ export function detectShellConfigFiles(): Array<{ name: string; value: string }>
       }
     }
 
-    if (fs.existsSync(path.join(home, '.zshrc'))) {
-      options.push({ name: '.zshrc (WSL zsh)', value: '.zshrc' });
-    } else {
-      options.push({ name: '.zshrc (WSL zsh) - will be created', value: '.zshrc' });
-    }
+    // Note: no .zshrc option on Windows — WSL has its own home directory, so
+    // writing to the Windows-side .zshrc would have no effect in WSL.
     if (fs.existsSync(path.join(home, '.bashrc'))) {
       options.push({ name: '.bashrc (Git Bash)', value: '.bashrc' });
     } else {

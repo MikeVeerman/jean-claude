@@ -21,7 +21,8 @@ describe('logger.ts', () => {
       const testPath = path.join(homeDir, 'documents', 'test.txt');
       const formatted = formatPath(testPath);
 
-      expect(formatted).toBe(path.join('~', 'documents', 'test.txt'));
+      // contractPath always emits portable forward slashes, on Windows too
+      expect(formatted).toBe('~/documents/test.txt');
     });
 
     it('should not modify paths outside home directory', () => {

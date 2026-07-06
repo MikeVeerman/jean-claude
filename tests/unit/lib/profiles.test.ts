@@ -11,8 +11,16 @@ vi.mock('../../../src/lib/paths.js', async (importOriginal) => {
     ...actual,
     getConfigPaths: vi.fn(),
     getJeanClaudeDir: vi.fn(),
+    detectPlatform: vi.fn(),
   };
 });
+
+/**
+ * Helper to skip tests on Windows.
+ * File symlinks on Windows require Developer Mode or admin privileges,
+ * making symlink-specific tests unreliable in CI.
+ */
+const isWindows = process.platform === 'win32';
 
 import {
   createProfile,
@@ -22,9 +30,10 @@ import {
   installShellAlias,
   removeShellAlias,
   getShellAliasLine,
-  SHARED_ITEMS,
+  checkSharedItemHealth,
+  relinkAllProfiles,
 } from '../../../src/lib/profiles.js';
-import { getConfigPaths, getJeanClaudeDir } from '../../../src/lib/paths.js';
+import { getConfigPaths, getJeanClaudeDir, detectPlatform } from '../../../src/lib/paths.js';
 
 describe('profiles.ts', () => {
   let tempDir: string;
@@ -42,13 +51,15 @@ describe('profiles.ts', () => {
     // Redirect os.homedir() so getProfileConfigDir creates dirs inside tempDir
     vi.spyOn(os, 'homedir').mockReturnValue(tempDir);
 
-    // Set up mocks
+    // Set up mocks — detectPlatform returns actual OS for hardlink vs symlink logic
+    const actualPlatform = isWindows ? 'win32' : 'darwin';
     vi.mocked(getConfigPaths).mockReturnValue({
       claudeConfigDir,
       jeanClaudeDir,
-      platform: 'darwin',
+      platform: actualPlatform,
     });
     vi.mocked(getJeanClaudeDir).mockReturnValue(jeanClaudeDir);
+    vi.mocked(detectPlatform).mockReturnValue(actualPlatform);
   });
 
   afterEach(async () => {
@@ -77,7 +88,7 @@ describe('profiles.ts', () => {
       expect(content).toContain('test-default profile');
     });
 
-    it('should symlink CLAUDE.md when shareClaudeMd is true', async () => {
+    it.skipIf(isWindows)('should symlink CLAUDE.md when shareClaudeMd is true (skipped on Windows)', async () => {
       const mainClaudeMd = path.join(claudeConfigDir, 'CLAUDE.md');
       await fs.writeFile(mainClaudeMd, '# Shared instructions');
 
@@ -113,7 +124,7 @@ describe('profiles.ts', () => {
       expect(stat.isSymbolicLink()).toBe(false);
     });
 
-    it('should not symlink statusline.sh by default', async () => {
+    it.skipIf(isWindows)('should not symlink statusline.sh unless shareStatusline is true', async () => {
       await fs.writeFile(
         path.join(claudeConfigDir, 'statusline.sh'),
         '#!/bin/bash\necho "status"'
@@ -122,10 +133,33 @@ describe('profiles.ts', () => {
       const profile = await createProfile('test-no-statusline');
       const statuslinePath = path.join(profile.configDir, 'statusline.sh');
 
+      // statusline.sh is no longer in SHARED_ITEMS — opt-in only
       expect(await fs.pathExists(statuslinePath)).toBe(false);
     });
 
-    it('should symlink statusline.sh when shareStatusline is true', async () => {
+    it.skipIf(isWindows)('should symlink both statusline.sh and statusline.ps1 when shareStatusline is true', async () => {
+      await fs.writeFile(
+        path.join(claudeConfigDir, 'statusline.sh'),
+        '#!/bin/bash\necho "status"'
+      );
+      await fs.writeFile(
+        path.join(claudeConfigDir, 'statusline.ps1'),
+        '# PowerShell statusline'
+      );
+
+      const profile = await createProfile('test-statusline-both', {
+        shareStatusline: true,
+      });
+
+      for (const statuslineFile of ['statusline.sh', 'statusline.ps1']) {
+        const sp = path.join(profile.configDir, statuslineFile);
+        expect(await fs.pathExists(sp)).toBe(true);
+        const stat = await fs.lstat(sp);
+        expect(stat.isSymbolicLink()).toBe(true);
+      }
+    });
+
+    it.skipIf(isWindows)('should symlink statusline.sh when shareStatusline is true', async () => {
       const mainStatusline = path.join(claudeConfigDir, 'statusline.sh');
       await fs.writeFile(mainStatusline, '#!/bin/bash\necho "status"');
 
@@ -153,7 +187,7 @@ describe('profiles.ts', () => {
       expect(await fs.pathExists(statuslinePath)).toBe(false);
     });
 
-    it('should support both sharing options together', async () => {
+    it.skipIf(isWindows)('should support both sharing options together', async () => {
       await fs.writeFile(
         path.join(claudeConfigDir, 'CLAUDE.md'),
         '# Shared'
@@ -294,7 +328,7 @@ describe('profiles.ts', () => {
   });
 
   describe('createSymlinks', () => {
-    it('should create symlinks for existing shared items', async () => {
+    it('should create links for existing shared items and return results with method', async () => {
       const sourceDir = path.join(tempDir, 'source');
       const targetDir = path.join(tempDir, 'target');
       await fs.ensureDir(sourceDir);
@@ -307,13 +341,28 @@ describe('profiles.ts', () => {
       );
       await fs.ensureDir(path.join(sourceDir, 'hooks'));
 
-      const created = await createSymlinks(sourceDir, targetDir);
+      const results = await createSymlinks(sourceDir, targetDir);
 
-      expect(created).toContain('settings.json');
-      expect(created).toContain('hooks');
+      expect(results.map((r) => r.name)).toContain('settings.json');
+      expect(results.map((r) => r.name)).toContain('hooks');
 
-      const stat = await fs.lstat(path.join(targetDir, 'settings.json'));
-      expect(stat.isSymbolicLink()).toBe(true);
+      // Directory always uses symlink (junction on Windows)
+      const hooksResult = results.find((r) => r.name === 'hooks');
+      expect(hooksResult?.method).toBe('symlink');
+
+      // File method depends on platform: 'link' (hardlink) on Windows, 'symlink' elsewhere
+      const settingsResult = results.find((r) => r.name === 'settings.json');
+      if (isWindows) {
+        expect(settingsResult?.method).toBe('link');
+        // Verify hardlink by checking link count (fs-extra doesn't expose this directly)
+        // The file should exist and be identical to the source
+        const destContent = await fs.readFile(path.join(targetDir, 'settings.json'), 'utf-8');
+        expect(destContent).toBe('{"key":"value"}');
+      } else {
+        expect(settingsResult?.method).toBe('symlink');
+        const stat = await fs.lstat(path.join(targetDir, 'settings.json'));
+        expect(stat.isSymbolicLink()).toBe(true);
+      }
     });
 
     it('should skip items that do not exist in source', async () => {
@@ -323,8 +372,207 @@ describe('profiles.ts', () => {
       await fs.ensureDir(targetDir);
 
       // Don't create any shared items
-      const created = await createSymlinks(sourceDir, targetDir);
-      expect(created).toEqual([]);
+      const results = await createSymlinks(sourceDir, targetDir);
+      expect(results).toEqual([]);
+    });
+  });
+
+  // Windows link semantics: hardlinks for files, junctions for directories.
+  // detectPlatform is mocked to 'win32' so these run on every OS (hardlinks
+  // are POSIX-native too, and the 'junction' symlink type is ignored outside
+  // Windows); on the windows-latest CI job they exercise real junctions.
+  describe('createSymlinks — Windows semantics (hardlinks + junctions)', () => {
+    let sourceDir: string;
+    let targetDir: string;
+
+    beforeEach(async () => {
+      vi.mocked(detectPlatform).mockReturnValue('win32');
+      sourceDir = path.join(tempDir, 'win-source');
+      targetDir = path.join(tempDir, 'win-target');
+      await fs.ensureDir(sourceDir);
+      await fs.ensureDir(targetDir);
+      await fs.writeFile(path.join(sourceDir, 'settings.json'), '{"a":1}');
+      await fs.ensureDir(path.join(sourceDir, 'hooks'));
+      await fs.writeFile(path.join(sourceDir, 'hooks', 'hook.sh'), 'echo hi');
+    });
+
+    it('creates hardlinks for files (method: link, same inode)', async () => {
+      const results = await createSymlinks(sourceDir, targetDir);
+
+      const settings = results.find((r) => r.name === 'settings.json');
+      expect(settings?.method).toBe('link');
+
+      // A hardlink is not a symlink and shares the inode with the source
+      const lstat = await fs.lstat(path.join(targetDir, 'settings.json'));
+      expect(lstat.isSymbolicLink()).toBe(false);
+
+      const srcStat = await fs.stat(path.join(sourceDir, 'settings.json'));
+      const dstStat = await fs.stat(path.join(targetDir, 'settings.json'));
+      expect(dstStat.ino).toBe(srcStat.ino);
+    });
+
+    it('creates junctions for directories (method: symlink)', async () => {
+      const results = await createSymlinks(sourceDir, targetDir);
+
+      const hooks = results.find((r) => r.name === 'hooks');
+      expect(hooks?.method).toBe('symlink');
+
+      // Junctions report as symbolic links via lstat
+      const lstat = await fs.lstat(path.join(targetDir, 'hooks'));
+      expect(lstat.isSymbolicLink()).toBe(true);
+
+      // Content is reachable through the junction
+      const content = await fs.readFile(
+        path.join(targetDir, 'hooks', 'hook.sh'),
+        'utf-8'
+      );
+      expect(content).toBe('echo hi');
+    });
+
+    it('falls back to copy when the hardlink fails with EXDEV (cross-volume)', async () => {
+      vi.spyOn(fs, 'link').mockRejectedValue(
+        Object.assign(new Error('EXDEV: cross-device link not permitted'), {
+          code: 'EXDEV',
+        })
+      );
+
+      const results = await createSymlinks(sourceDir, targetDir);
+
+      const settings = results.find((r) => r.name === 'settings.json');
+      expect(settings?.method).toBe('copy');
+
+      const content = await fs.readFile(
+        path.join(targetDir, 'settings.json'),
+        'utf-8'
+      );
+      expect(content).toBe('{"a":1}');
+    });
+
+    it('falls back to copy when the hardlink fails with EPERM', async () => {
+      vi.spyOn(fs, 'link').mockRejectedValue(
+        Object.assign(new Error('EPERM: operation not permitted'), {
+          code: 'EPERM',
+        })
+      );
+
+      const results = await createSymlinks(sourceDir, targetDir);
+
+      const settings = results.find((r) => r.name === 'settings.json');
+      expect(settings?.method).toBe('copy');
+    });
+
+    it('rethrows unexpected hardlink errors instead of copying', async () => {
+      vi.spyOn(fs, 'link').mockRejectedValue(
+        Object.assign(new Error('EACCES: permission denied'), {
+          code: 'EACCES',
+        })
+      );
+
+      await expect(createSymlinks(sourceDir, targetDir)).rejects.toMatchObject({
+        code: 'EACCES',
+      });
+    });
+  });
+
+  describe('checkSharedItemHealth', () => {
+    let sourceDir: string;
+    let profileDir: string;
+
+    beforeEach(async () => {
+      sourceDir = path.join(tempDir, 'health-source');
+      profileDir = path.join(tempDir, 'health-profile');
+      await fs.ensureDir(sourceDir);
+      await fs.ensureDir(profileDir);
+      await fs.writeFile(path.join(sourceDir, 'settings.json'), '{"a":1}');
+    });
+
+    it('reports no issues for an intact hardlink', async () => {
+      await fs.link(
+        path.join(sourceDir, 'settings.json'),
+        path.join(profileDir, 'settings.json')
+      );
+
+      const issues = await checkSharedItemHealth(sourceDir, profileDir);
+      expect(issues).toEqual([]);
+    });
+
+    it('does not flag a copy with identical content', async () => {
+      await fs.copy(
+        path.join(sourceDir, 'settings.json'),
+        path.join(profileDir, 'settings.json')
+      );
+
+      const issues = await checkSharedItemHealth(sourceDir, profileDir);
+      expect(issues).toEqual([]);
+    });
+
+    it('reports stale when the profile file diverged from the source', async () => {
+      // Simulates a detached hardlink: same name, different inode + content
+      await fs.writeFile(path.join(profileDir, 'settings.json'), '{"old":true}');
+
+      const issues = await checkSharedItemHealth(sourceDir, profileDir);
+      expect(issues).toEqual([{ name: 'settings.json', kind: 'stale' }]);
+    });
+
+    it.skipIf(isWindows)('reports broken symlinks whose target is gone (skipped on Windows)', async () => {
+      await fs.symlink(
+        path.join(sourceDir, 'keybindings.json'),
+        path.join(profileDir, 'keybindings.json')
+      );
+
+      const issues = await checkSharedItemHealth(sourceDir, profileDir);
+      expect(issues).toEqual([{ name: 'keybindings.json', kind: 'broken' }]);
+    });
+  });
+
+  describe('relinkAllProfiles', () => {
+    it('re-links profiles so they see a replaced source file', async () => {
+      await fs.writeFile(path.join(claudeConfigDir, 'settings.json'), '{"v":1}');
+      const profile = await createProfile('relink-test');
+
+      // Replace the source file — this is what sync pull does, and what
+      // detaches hardlinks on Windows
+      await fs.remove(path.join(claudeConfigDir, 'settings.json'));
+      await fs.writeFile(path.join(claudeConfigDir, 'settings.json'), '{"v":2}');
+
+      const relinked = await relinkAllProfiles();
+      expect(relinked).toContain('relink-test');
+
+      const content = await fs.readFile(
+        path.join(profile.configDir, 'settings.json'),
+        'utf-8'
+      );
+      expect(content).toBe('{"v":2}');
+    });
+
+    it('skips profiles whose directory is missing', async () => {
+      await saveProfiles({
+        profiles: {
+          ghost: { alias: 'claude-ghost', configDir: path.join(tempDir, '.claude-ghost') },
+        },
+      });
+
+      const relinked = await relinkAllProfiles();
+      expect(relinked).toEqual([]);
+    });
+  });
+
+  describe('getShellAliasLine', () => {
+    const profile = {
+      alias: 'claude-work',
+      configDir: 'C:\\Users\\me\\.claude-work',
+    };
+
+    it('keeps Windows paths literal for PowerShell (no doubled backslashes)', () => {
+      const line = getShellAliasLine(profile, 'Microsoft.PowerShell_profile.ps1');
+      expect(line).toBe(
+        "function claude-work { $env:CLAUDE_CONFIG_DIR='C:\\Users\\me\\.claude-work'; claude @args }"
+      );
+    });
+
+    it('escapes backslashes for bash/zsh double-quoted strings', () => {
+      const line = getShellAliasLine(profile, '.bashrc');
+      expect(line).toContain('CLAUDE_CONFIG_DIR="C:\\\\Users\\\\me\\\\.claude-work"');
     });
   });
 });

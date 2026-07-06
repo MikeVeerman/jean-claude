@@ -59,7 +59,9 @@ describe('git.ts', () => {
       expect(log.latest?.message).toBe('add file');
     });
 
-    it('should skip pull --rebase when there is no upstream tracking branch (#36)', async () => {
+    // Real git operations (clone, push, pull) are slow on Windows runners —
+    // allow more than the 5s default
+    it('should skip pull --rebase when there is no upstream tracking branch (#36)', { timeout: 30000 }, async () => {
       // Create a local repo
       const localDir = path.join(tempDir, 'local');
       await fs.ensureDir(localDir);
@@ -95,7 +97,7 @@ describe('git.ts', () => {
       expect(log.latest?.message).toBe('first push no upstream');
     });
 
-    it('should pull --rebase before push when upstream tracking branch exists (#22)', async () => {
+    it('should pull --rebase before push when upstream tracking branch exists (#22)', { timeout: 30000 }, async () => {
       // Simulate two machines sharing a bare remote
       const machine1Dir = path.join(tempDir, 'machine1');
       const machine2Dir = path.join(tempDir, 'machine2');
@@ -151,7 +153,7 @@ describe('git.ts', () => {
     // Reproduces the "Need to specify how to reconcile divergent branches"
     // failure: local has an unpushed commit while the remote has moved on, so
     // history has diverged. A plain `git pull` aborts; pull() must rebase.
-    it('should reconcile divergent branches by rebasing', async () => {
+    it('should reconcile divergent branches by rebasing', { timeout: 30000 }, async () => {
       const machine1Dir = path.join(tempDir, 'machine1');
       const machine2Dir = path.join(tempDir, 'machine2');
       const bareDir = path.join(tempDir, 'remote.git');
@@ -196,7 +198,7 @@ describe('git.ts', () => {
       expect(messages).toContain('machine2 commit');
     });
 
-    it('should auto-resolve a meta.json-only conflict on divergence', async () => {
+    it('should auto-resolve a meta.json-only conflict on divergence', { timeout: 30000 }, async () => {
       const machine1Dir = path.join(tempDir, 'machine1');
       const machine2Dir = path.join(tempDir, 'machine2');
       const bareDir = path.join(tempDir, 'remote.git');
@@ -243,7 +245,7 @@ describe('git.ts', () => {
       expect(meta).toContain('machine2');
     });
 
-    it('should report already up to date when there is nothing to pull', async () => {
+    it('should report already up to date when there is nothing to pull', { timeout: 30000 }, async () => {
       const machine1Dir = path.join(tempDir, 'machine1');
       const bareDir = path.join(tempDir, 'remote.git');
 

@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import os from 'os';
+import path from 'path';
 import { expandPath, contractPath } from '../../../src/lib/paths.js';
 
 describe('paths.ts', () => {
-  const home = '/Users/testuser';
+  // Platform-native home so path.join-built paths match on every OS
+  const home =
+    process.platform === 'win32' ? 'C:\\Users\\testuser' : '/Users/testuser';
 
   beforeEach(() => {
     vi.spyOn(os, 'homedir').mockReturnValue(home);
@@ -15,8 +18,14 @@ describe('paths.ts', () => {
 
   describe('expandPath', () => {
     it('should expand ~/ to the home directory', () => {
-      expect(expandPath('~/.claude-work')).toBe('/Users/testuser/.claude-work');
-      expect(expandPath('~/a/b/c')).toBe('/Users/testuser/a/b/c');
+      // path.join produces platform-native separators
+      expect(expandPath('~/.claude-work')).toBe(path.join(home, '.claude-work'));
+      expect(expandPath('~/a/b/c')).toBe(path.join(home, 'a/b/c'));
+    });
+
+    it('should expand ~\\ (Windows-style) to the home directory', () => {
+      // Config files written by older Windows versions may contain ~\
+      expect(expandPath('~\\.claude-work')).toBe(path.join(home, '.claude-work'));
     });
 
     it('should expand a bare ~ to the home directory', () => {
@@ -45,8 +54,11 @@ describe('paths.ts', () => {
   });
 
   describe('contractPath', () => {
-    it('should replace the home directory prefix with ~', () => {
-      expect(contractPath('/Users/testuser/.claude-work')).toBe('~/.claude-work');
+    it('should replace the home directory prefix with a portable ~/', () => {
+      // Even on Windows (backslash paths) the contracted form uses forward
+      // slashes so it expands correctly on any other machine
+      expect(contractPath(path.join(home, '.claude-work'))).toBe('~/.claude-work');
+      expect(contractPath(path.join(home, 'a', 'b'))).toBe('~/a/b');
     });
 
     it('should contract an exact home directory match to ~', () => {
@@ -54,9 +66,10 @@ describe('paths.ts', () => {
     });
 
     it('should not contract sibling directories sharing the home prefix', () => {
-      // /Users/testusershared starts with the home string but is a different dir;
+      // <home>shared starts with the home string but is a different dir;
       // contracting it to ~shared/... would not survive expandPath.
-      expect(contractPath('/Users/testusershared/x')).toBe('/Users/testusershared/x');
+      const sibling = home + 'shared' + path.sep + 'x';
+      expect(contractPath(sibling)).toBe(sibling);
     });
 
     it('should pass through paths outside the home directory', () => {
@@ -68,7 +81,7 @@ describe('paths.ts', () => {
     });
 
     it('should be idempotent', () => {
-      const contracted = contractPath('/Users/testuser/.claude-work');
+      const contracted = contractPath(path.join(home, '.claude-work'));
       expect(contractPath(contracted)).toBe(contracted);
     });
   });
@@ -76,9 +89,9 @@ describe('paths.ts', () => {
   describe('round-trip', () => {
     it('should restore the original absolute path', () => {
       const paths = [
-        '/Users/testuser/.claude-work',
+        path.join(home, '.claude-work'),
         home,
-        '/Users/testusershared/x',
+        home + 'shared' + path.sep + 'x',
         '/var/log/test.log',
       ];
       for (const p of paths) {

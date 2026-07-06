@@ -35,7 +35,7 @@ Profiles let you run multiple Claude Code configurations side by side — one fo
 jean-claude profile create work
 
 # Create non-interactively
-jean-claude profile create work --yes --shell .zshrc
+jean-claude profile create work --yes --shell .zshrc  # .ps1 on Windows
 
 # List your profiles
 jean-claude profile list
@@ -52,18 +52,20 @@ jean-claude profile delete work
 
 ### How profiles work
 
-Your main `~/.claude/` stays the source of truth. Profile directories (`~/.claude-<name>/`) are lightweight — they symlink back to your shared files:
+Your main `~/.claude/` stays the source of truth. Profile directories (`~/.claude-<name>/`) are lightweight — they link back to your shared files:
 
-| Always shared (symlinked) | Optionally shared         | Profile-specific       |
-|---------------------------|---------------------------|------------------------|
-| `settings.json`           | `CLAUDE.md`               | Authentication/session |
-| `hooks/`                  | `statusline.sh`           |                        |
-| `agents/`                 |                            |                        |
-| `skills/`                 |                            |                        |
-| `plugins/`                |                            |                        |
-| `keybindings.json`        |                            |                        |
+| Always shared (linked) | Optionally shared         | Profile-specific       |
+|------------------------|---------------------------|------------------------|
+| `settings.json`        | `CLAUDE.md`               | Authentication/session |
+| `hooks/`               | `statusline.sh` / `.ps1`  |                        |
+| `agents/`              |                           |                        |
+| `skills/`              |                           |                        |
+| `plugins/`             |                           |                        |
+| `keybindings.json`     |                           |                        |
 
-During profile creation, you're prompted whether to share `CLAUDE.md` and `statusline.sh` or keep them independent per profile. You can also use flags:
+> **Windows**: Profile directories use hardlinks (files) and junctions (directories). No Developer Mode or admin privileges required.
+
+During profile creation, you're prompted whether to share `CLAUDE.md` and `statusline.sh` (`statusline.ps1` on Windows) or keep them independent per profile. You can also use flags:
 
 ```bash
 # Share both

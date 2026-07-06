@@ -3,12 +3,17 @@ import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
 
-// Mock paths module before importing profiles
-vi.mock('../../../src/lib/paths.js', () => ({
-  getConfigPaths: vi.fn(),
-  getJeanClaudeDir: vi.fn(),
-  detectPlatform: vi.fn(),
-}));
+// Mock paths module before importing profiles.
+// Keep the real expandPath/contractPath so path round-tripping works in tests.
+vi.mock('../../../src/lib/paths.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/lib/paths.js')>();
+  return {
+    ...actual,
+    getConfigPaths: vi.fn(),
+    getJeanClaudeDir: vi.fn(),
+    detectPlatform: vi.fn(),
+  };
+});
 
 /**
  * Helper to skip tests on Windows.
@@ -246,6 +251,39 @@ describe('profiles.ts', () => {
       const files = await fs.readdir(jcDir);
       const tmpFiles = files.filter(f => f.endsWith('.tmp'));
       expect(tmpFiles).toEqual([]);
+    });
+  });
+
+  describe('saveProfiles/loadProfiles — portable ~ paths', () => {
+    it('should store configDir with ~ on disk and expand it on load', async () => {
+      // os.homedir() is mocked to tempDir in beforeEach
+      const configDir = path.join(tempDir, '.claude-work');
+      await saveProfiles({
+        profiles: { work: { alias: 'claude-work', configDir } },
+      });
+
+      const raw = await fs.readJson(path.join(jeanClaudeDir, 'profiles.json'));
+      expect(raw.profiles.work.configDir).toBe('~/.claude-work');
+
+      const loaded = await loadProfiles();
+      expect(loaded.profiles.work.configDir).toBe(configDir);
+    });
+
+    it('should not mutate the config object passed to saveProfiles', async () => {
+      const configDir = path.join(tempDir, '.claude-work');
+      const config = { profiles: { work: { alias: 'claude-work', configDir } } };
+
+      await saveProfiles(config);
+      expect(config.profiles.work.configDir).toBe(configDir);
+    });
+
+    it('should load legacy profiles.json with absolute paths unchanged', async () => {
+      await fs.writeJson(path.join(jeanClaudeDir, 'profiles.json'), {
+        profiles: { old: { alias: 'claude-old', configDir: '/tmp/absolute-dir' } },
+      });
+
+      const loaded = await loadProfiles();
+      expect(loaded.profiles.old.configDir).toBe('/tmp/absolute-dir');
     });
   });
 

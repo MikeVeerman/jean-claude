@@ -131,6 +131,39 @@ describe('sync.ts', () => {
         const meta = await readMetaJson(jeanClaudeDir);
         expect(meta).toBeNull();
       });
+
+      it('should store claudeConfigPath with ~ on disk and expand it on read', async () => {
+        const claudeConfigPath = path.join(os.homedir(), '.claude');
+        const meta = createMetaJson(claudeConfigPath);
+        const jeanClaudeDir = path.join(tempDir, '.jean-claude');
+        await fs.ensureDir(jeanClaudeDir);
+
+        // createMetaJson keeps the runtime value absolute
+        expect(meta.claudeConfigPath).toBe(claudeConfigPath);
+
+        await writeMetaJson(jeanClaudeDir, meta);
+
+        const raw = await fs.readJson(path.join(jeanClaudeDir, 'meta.json'));
+        expect(raw.claudeConfigPath).toBe('~/.claude');
+
+        const readMeta = await readMetaJson(jeanClaudeDir);
+        expect(readMeta!.claudeConfigPath).toBe(claudeConfigPath);
+      });
+
+      it('should tolerate legacy meta.json without claudeConfigPath', async () => {
+        const jeanClaudeDir = path.join(tempDir, '.jean-claude');
+        await fs.ensureDir(jeanClaudeDir);
+        await fs.writeJson(path.join(jeanClaudeDir, 'meta.json'), {
+          version: '1.0.0',
+          lastSync: null,
+          machineId: 'host-abc123',
+          platform: 'darwin',
+        });
+
+        const meta = await readMetaJson(jeanClaudeDir);
+        expect(meta).not.toBeNull();
+        expect(meta!.claudeConfigPath).toBeUndefined();
+      });
     });
 
     describe('updateLastSync', () => {

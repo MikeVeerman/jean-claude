@@ -276,6 +276,20 @@ describe('profiles.ts', () => {
       expect(content2).toContain('/updated/path');
     });
 
+    it('should create missing parent directories (fish config)', async () => {
+      const profile = { alias: 'claude-fishy', configDir: path.join(tempDir, '.claude-fishy') };
+
+      // ~/.config/fish does not exist yet
+      await installShellAlias('fishy', profile, '.config/fish/config.fish');
+
+      const content = await fs.readFile(
+        path.join(tempDir, '.config/fish/config.fish'),
+        'utf-8'
+      );
+      expect(content).toContain('jean-claude profile: fishy');
+      expect(content).toContain('claude-fishy');
+    });
+
     it('should not match other profile names when replacing', async () => {
       const rcPath = path.join(tempDir, '.zshrc');
       const profileA = { alias: 'claude-a', configDir: path.join(tempDir, '.claude-a') };
@@ -335,7 +349,10 @@ describe('profiles.ts', () => {
       await fs.ensureFile(fishConfig);
 
       const options = detectShellConfigFiles();
-      expect(options.some((o) => o.value === '.config/fish/config.fish')).toBe(true);
+      const fishOption = options.find((o) => o.value === '.config/fish/config.fish');
+      expect(fishOption).toBeDefined();
+      // Detected as existing, not offered via the "will be created" fallback
+      expect(fishOption?.name).not.toContain('will be created');
     });
 
     it('should always offer fish config even if it does not exist', async () => {

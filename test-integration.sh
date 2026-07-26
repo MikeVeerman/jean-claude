@@ -2004,6 +2004,7 @@ run_all_tests() {
     test_profile_no_share_statusline
     test_profile_share_both
     test_profile_shell_alias
+    test_profile_shell_alias_fish
     test_profile_list
     test_profile_create_second
     test_profile_create_duplicate

@@ -235,7 +235,8 @@ export async function installShellAlias(
     }
   }
 
-  // Append alias block
+  // Append alias block (fish config lives in ~/.config/fish, which may not exist yet)
+  await fs.ensureFile(rcPath);
   await fs.appendFile(rcPath, block);
 }
 

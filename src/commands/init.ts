@@ -1,9 +1,9 @@
 import { Command } from 'commander';
 import fs from 'fs-extra';
 import path from 'path';
-import { logger, formatPath } from '../utils/logger.js';
+import { logger } from '../utils/logger.js';
 import { confirm } from '../utils/prompts.js';
-import { getConfigPaths, ensureDir } from '../lib/paths.js';
+import { getConfigPaths, ensureDir, contractPath } from '../lib/paths.js';
 import {
   createMetaJson,
   writeMetaJson,
@@ -25,7 +25,7 @@ export const initCommand = new Command('init')
     // Check if already initialized
     const metaPath = path.join(jeanClaudeDir, 'meta.json');
     if (fs.existsSync(metaPath)) {
-      logger.success(`Already initialized at ${formatPath(jeanClaudeDir)}`);
+      logger.success(`Already initialized at ${contractPath(jeanClaudeDir)}`);
       logger.dim('Run "jean-claude sync status" to see current state.');
       return;
     }

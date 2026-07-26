@@ -50,14 +50,6 @@ export const FILE_MAPPINGS: FileMapping[] = [
 ];
 
 /**
- * Resolve the repo path for a file mapping.
- * For both internal and external mappings, the source is the path in the jean-claude repo.
- */
-function resolveRepoPath(repoDir: string, mapping: FileMapping): string {
-  return path.join(repoDir, mapping.source);
-}
-
-/**
  * Resolve the external or target path for a file mapping.
  * If the mapping has a baseDir, paths are resolved relative to it.
  * Otherwise, they are resolved relative to the provided target directory.
@@ -207,7 +199,7 @@ export async function importFromClaudeConfig(
     }
 
     results.push({
-      file: mapping.target,
+      file: mapping.source,
       action: targetExists ? 'updated' : 'copied',
       source: sourcePath,
       target: targetPath,

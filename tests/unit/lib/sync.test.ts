@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
@@ -27,6 +27,7 @@ describe('sync.ts', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     // Clean up
     await fs.remove(tempDir);
   });
@@ -317,6 +318,11 @@ describe('sync.ts', () => {
   });
 
   describe('external path mappings (baseDir)', () => {
+    beforeEach(() => {
+      // Redirect os.homedir() so expandPath('~/...') resolves inside tempDir
+      vi.spyOn(os, 'homedir').mockReturnValue(tempDir);
+    });
+
     it('should include ccstatusline in FILE_MAPPINGS', () => {
       const ccstatuslineMapping = FILE_MAPPINGS.find(
         (m: { source: string; target: string }) =>
@@ -329,8 +335,7 @@ describe('sync.ts', () => {
     });
 
     it('should sync ccstatusline settings.json from external path to repo', async () => {
-      const homeDir = os.homedir();
-      const externalConfigDir = path.join(homeDir, '.config', 'ccstatusline');
+      const externalConfigDir = path.join(tempDir, '.config', 'ccstatusline');
       const jeanClaudeDir = path.join(tempDir, '.jean-claude');
 
       await fs.ensureDir(externalConfigDir);
@@ -341,9 +346,8 @@ describe('sync.ts', () => {
         '{"widgets":[{"type":"model"}]}'
       );
 
-      try {
         const results = await syncFromClaudeConfig(
-          path.join(homeDir, '.config'),
+          path.join(tempDir, '.config'),
           jeanClaudeDir
         );
 
@@ -358,15 +362,10 @@ describe('sync.ts', () => {
           'utf-8'
         );
         expect(syncedContent).toBe('{"widgets":[{"type":"model"}]}');
-      } finally {
-        await fs.remove(externalConfigDir);
-        await fs.remove(path.join(jeanClaudeDir, 'ccstatusline.json'));
-      }
     });
 
     it('should import ccstatusline settings from external path to repo via importFromClaudeConfig', async () => {
-      const homeDir = os.homedir();
-      const externalConfigDir = path.join(homeDir, '.config', 'ccstatusline');
+      const externalConfigDir = path.join(tempDir, '.config', 'ccstatusline');
       const jeanClaudeDir = path.join(tempDir, '.jean-claude');
 
       await fs.ensureDir(externalConfigDir);
@@ -377,14 +376,13 @@ describe('sync.ts', () => {
         '{"theme":"dark","widgets":["model","git"]}'
       );
 
-      try {
         const results = await importFromClaudeConfig(
-          path.join(homeDir, '.config'),
+          path.join(tempDir, '.config'),
           jeanClaudeDir
         );
 
         const ccstatuslineResult = results.find(
-          (r: { file: string }) => r.file === 'ccstatusline/settings.json'
+          (r: { file: string }) => r.file === 'ccstatusline.json'
         );
         expect(ccstatuslineResult).toBeDefined();
         expect(ccstatuslineResult!.action).toBe('copied');
@@ -394,15 +392,10 @@ describe('sync.ts', () => {
           'utf-8'
         );
         expect(syncedContent).toBe('{"theme":"dark","widgets":["model","git"]}');
-      } finally {
-        await fs.remove(externalConfigDir);
-        await fs.remove(path.join(jeanClaudeDir, 'ccstatusline.json'));
-      }
     });
 
     it('should sync ccstatusline settings.json from repo to external path', async () => {
-      const homeDir = os.homedir();
-      const externalConfigDir = path.join(homeDir, '.config', 'ccstatusline');
+      const externalConfigDir = path.join(tempDir, '.config', 'ccstatusline');
       const jeanClaudeDir = path.join(tempDir, '.jean-claude');
 
       await fs.ensureDir(jeanClaudeDir);
@@ -413,10 +406,9 @@ describe('sync.ts', () => {
         '{"widgets":[{"type":"git-branch"}]}'
       );
 
-      try {
         const results = await syncToClaudeConfig(
           jeanClaudeDir,
-          path.join(homeDir, '.config')
+          path.join(tempDir, '.config')
         );
 
         const ccstatuslineResult = results.find(
@@ -430,10 +422,6 @@ describe('sync.ts', () => {
           'utf-8'
         );
         expect(syncedContent).toBe('{"widgets":[{"type":"git-branch"}]}');
-      } finally {
-        await fs.remove(externalConfigDir);
-        await fs.remove(path.join(jeanClaudeDir, 'ccstatusline.json'));
-      }
     });
   });
 });

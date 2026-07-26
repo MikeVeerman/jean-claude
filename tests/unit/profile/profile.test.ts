@@ -61,10 +61,12 @@ vi.mock('../../../src/lib/profiles.js', () => ({
   createProfile: vi.fn(),
   deleteProfile: vi.fn(),
   refreshSymlinks: vi.fn(),
-  installShellAlias: vi.fn(),
+  installShellAlias: vi.fn(async () => []),
   removeShellAlias: vi.fn(),
   getProfileConfigDir: vi.fn(),
   getShellAliasLine: vi.fn(),
+  getReloadInstruction: vi.fn((f: string) => `source ~/${f}`),
+  checkSharedItemHealth: vi.fn(async () => []),
   detectShellConfigFiles: vi.fn(),
   SHARED_ITEMS: [
     { name: 'settings.json', type: 'file' },
@@ -74,8 +76,13 @@ vi.mock('../../../src/lib/profiles.js', () => ({
 
 vi.mock('../../../src/lib/paths.js', () => ({
   getJeanClaudeDir: vi.fn(),
-  getConfigPaths: vi.fn(),
+  getConfigPaths: vi.fn(() => ({
+    claudeConfigDir: '/mock/.claude',
+    jeanClaudeDir: '/mock/.jean-claude',
+    platform: 'darwin',
+  })),
   getProfileConfigDir: vi.fn(),
+  detectPlatform: vi.fn(() => 'darwin'),
   contractPath: vi.fn((p) => p),
 }));
 
@@ -159,7 +166,7 @@ describe('handleProfileCreate', () => {
       alias: 'claude-work',
       configDir: path.join(os.homedir(), '.claude-work'),
     });
-    (profiles.installShellAlias as vi.Mock).mockResolvedValue(undefined);
+    (profiles.installShellAlias as vi.Mock).mockResolvedValue([]);
     (profiles.detectShellConfigFiles as vi.Mock).mockReturnValue([]);
 
     await handleProfileCreate('work', { yes: true });
@@ -175,7 +182,7 @@ describe('handleProfileCreate', () => {
       alias: 'claude-work',
       configDir: path.join(os.homedir(), '.claude-work'),
     });
-    (profiles.installShellAlias as vi.Mock).mockResolvedValue(undefined);
+    (profiles.installShellAlias as vi.Mock).mockResolvedValue([]);
     (profiles.detectShellConfigFiles as vi.Mock).mockReturnValue([]);
     (prompts.confirm as vi.Mock).mockResolvedValueOnce(true).mockResolvedValueOnce(true).mockResolvedValueOnce(true);
 
@@ -192,7 +199,7 @@ describe('handleProfileCreate', () => {
       alias: 'claude-work',
       configDir: path.join(os.homedir(), '.claude-work'),
     });
-    (profiles.installShellAlias as vi.Mock).mockResolvedValue(undefined);
+    (profiles.installShellAlias as vi.Mock).mockResolvedValue([]);
     (profiles.detectShellConfigFiles as vi.Mock).mockReturnValue([]);
     (prompts.confirm as vi.Mock).mockResolvedValueOnce(false).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
 
@@ -219,7 +226,7 @@ describe('handleProfileCreate', () => {
       alias: 'claude-work',
       configDir: path.join(os.homedir(), '.claude-work'),
     });
-    (profiles.installShellAlias as vi.Mock).mockResolvedValue(undefined);
+    (profiles.installShellAlias as vi.Mock).mockResolvedValue([]);
     (prompts.confirm as vi.Mock).mockResolvedValueOnce(false).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
 
     await handleProfileCreate('work', { yes: true, shell: '.bashrc' });
@@ -294,12 +301,9 @@ describe('handleProfileList', () => {
       },
     });
     (fs.pathExists as vi.Mock).mockResolvedValue(true);
-    (fs.lstat as vi.Mock).mockResolvedValue({ isSymbolicLink: () => true });
-    (fs.readlink as vi.Mock).mockResolvedValue('/nonexistent/target');
-    (fs.pathExists as vi.Mock).mockImplementation(async (p) => {
-      if (p === '/nonexistent/target') return false;
-      return true;
-    });
+    (profiles.checkSharedItemHealth as vi.Mock).mockResolvedValue([
+      { name: 'settings.json', kind: 'broken' },
+    ]);
 
     await handleProfileList();
 
@@ -307,6 +311,30 @@ describe('handleProfileList', () => {
       expect.arrayContaining([
         expect.arrayContaining(['Symlinks', expect.stringContaining('broken')]),
       ])
+    );
+  });
+
+  it('reports stale links with a refresh hint', async () => {
+    const mockConfigDir = path.join(os.homedir(), '.claude-work');
+    (profiles.loadProfiles as vi.Mock).mockResolvedValue({
+      profiles: {
+        work: { alias: 'claude-work', configDir: mockConfigDir },
+      },
+    });
+    (fs.pathExists as vi.Mock).mockResolvedValue(true);
+    (profiles.checkSharedItemHealth as vi.Mock).mockResolvedValue([
+      { name: 'settings.json', kind: 'stale' },
+    ]);
+
+    await handleProfileList();
+
+    expect(logger.logger.table).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.arrayContaining(['Links', expect.stringContaining('stale')]),
+      ])
+    );
+    expect(logger.logger.dim).toHaveBeenCalledWith(
+      expect.stringContaining('profile refresh work')
     );
   });
 });

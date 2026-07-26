@@ -42,6 +42,11 @@ export const FILE_MAPPINGS: FileMapping[] = [
     type: 'file',
   },
   {
+    source: 'statusline.ps1',
+    target: 'statusline.ps1',
+    type: 'file',
+  },
+  {
     source: 'ccstatusline.json',
     target: 'ccstatusline/settings.json',
     type: 'file',

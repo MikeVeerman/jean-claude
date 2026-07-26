@@ -25,7 +25,7 @@ export enum ErrorCode {
 export interface ConfigPaths {
   jeanClaudeDir: string;
   claudeConfigDir: string;
-  platform: 'darwin' | 'linux';
+  platform: 'darwin' | 'linux' | 'win32';
 }
 
 export interface FileMapping {

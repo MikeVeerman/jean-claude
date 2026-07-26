@@ -27,6 +27,7 @@ vi.mock('fs-extra', () => {
 
 vi.mock('../../../src/lib/paths.js', () => ({
   getConfigPaths: vi.fn(),
+  detectPlatform: vi.fn(() => 'darwin'),
   contractPath: vi.fn((p) => p),
 }));
 

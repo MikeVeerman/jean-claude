@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import os from 'os';
+import path from 'path';
 import { expandPath, contractPath } from '../../../src/lib/paths.js';
 
 describe('paths.ts', () => {
@@ -65,6 +66,18 @@ describe('paths.ts', () => {
 
     it('should pass through falsy input unchanged', () => {
       expect(contractPath('')).toBe('');
+    });
+
+    it('should handle paths with trailing separators', () => {
+      const trailing = home + '/documents/folder' + path.sep;
+      const contracted = contractPath(trailing);
+      expect(contracted.startsWith('~')).toBe(true);
+      expect(expandPath(contracted)).toBe(trailing);
+    });
+
+    it('should pass through relative paths unchanged', () => {
+      expect(contractPath('./relative/path')).toBe('./relative/path');
+      expect(contractPath('../sibling/file.txt')).toBe('../sibling/file.txt');
     });
 
     it('should be idempotent', () => {

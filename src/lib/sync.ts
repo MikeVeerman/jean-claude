@@ -41,7 +41,31 @@ export const FILE_MAPPINGS: FileMapping[] = [
     target: 'statusline.sh',
     type: 'file',
   },
+  {
+    source: 'ccstatusline.json',
+    target: 'ccstatusline/settings.json',
+    type: 'file',
+    baseDir: '~/.config',
+  },
 ];
+
+/**
+ * Resolve the repo path for a file mapping.
+ * For both internal and external mappings, the source is the path in the jean-claude repo.
+ */
+function resolveRepoPath(repoDir: string, mapping: FileMapping): string {
+  return path.join(repoDir, mapping.source);
+}
+
+/**
+ * Resolve the external or target path for a file mapping.
+ * If the mapping has a baseDir, paths are resolved relative to it.
+ * Otherwise, they are resolved relative to the provided target directory.
+ */
+function resolveTargetPath(targetDir: string, mapping: FileMapping): string {
+  const resolvedBase = mapping.baseDir ? expandPath(mapping.baseDir) : targetDir;
+  return path.join(resolvedBase, mapping.target);
+}
 
 function fileHash(filePath: string): string | null {
   if (!fs.existsSync(filePath)) {
@@ -57,7 +81,7 @@ export function compareFiles(
 ): Array<{ mapping: FileMapping; inSync: boolean; sourceExists: boolean; targetExists: boolean }> {
   return FILE_MAPPINGS.map((mapping) => {
     const sourcePath = path.join(sourceDir, mapping.source);
-    const targetPath = path.join(targetDir, mapping.target);
+    const targetPath = resolveTargetPath(targetDir, mapping);
 
     const sourceExists = fs.existsSync(sourcePath);
     const targetExists = fs.existsSync(targetPath);
@@ -108,14 +132,14 @@ export async function syncToClaudeConfig(
 ): Promise<SyncResult[]> {
   const results: SyncResult[] = [];
 
-  // Ensure target directory exists
+  // Ensure target directory exists (for internal mappings)
   if (!dryRun) {
     await fs.ensureDir(claudeConfigDir);
   }
 
   for (const mapping of FILE_MAPPINGS) {
     const sourcePath = path.join(jeanClaudeDir, mapping.source);
-    const targetPath = path.join(claudeConfigDir, mapping.target);
+    const targetPath = resolveTargetPath(claudeConfigDir, mapping);
 
     if (!fs.existsSync(sourcePath)) {
       results.push({
@@ -167,7 +191,7 @@ export async function importFromClaudeConfig(
   const results: SyncResult[] = [];
 
   for (const mapping of FILE_MAPPINGS) {
-    const sourcePath = path.join(claudeConfigDir, mapping.target);
+    const sourcePath = resolveTargetPath(claudeConfigDir, mapping);
     const targetPath = path.join(jeanClaudeDir, mapping.source);
 
     if (!fs.existsSync(sourcePath)) {
@@ -200,7 +224,7 @@ export async function syncFromClaudeConfig(
   const results: SyncResult[] = [];
 
   for (const mapping of FILE_MAPPINGS) {
-    const sourcePath = path.join(claudeConfigDir, mapping.target);
+    const sourcePath = resolveTargetPath(claudeConfigDir, mapping);
     const targetPath = path.join(jeanClaudeDir, mapping.source);
 
     if (!fs.existsSync(sourcePath)) {

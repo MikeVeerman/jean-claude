@@ -81,7 +81,9 @@ describe('paths.ts', () => {
     });
 
     it('should handle paths with trailing separators', () => {
-      const trailing = home + '/documents/folder' + path.sep;
+      // Native separators throughout: expandPath rebuilds with path.join, so a
+      // mixed-separator input would not round-trip byte-for-byte on Windows
+      const trailing = path.join(home, 'documents', 'folder') + path.sep;
       const contracted = contractPath(trailing);
       expect(contracted.startsWith('~')).toBe(true);
       expect(expandPath(contracted)).toBe(trailing);

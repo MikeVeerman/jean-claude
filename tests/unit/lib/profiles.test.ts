@@ -593,6 +593,12 @@ describe('profiles.ts', () => {
   });
 
   describe('detectShellConfigFiles', () => {
+    beforeEach(() => {
+      // fish detection lives in the POSIX branch; on Windows the function
+      // offers PowerShell/Git Bash options instead
+      vi.mocked(detectPlatform).mockReturnValue('darwin');
+    });
+
     it('should detect fish config file when it exists', async () => {
       const fishConfig = path.join(tempDir, '.config/fish/config.fish');
       await fs.ensureFile(fishConfig);

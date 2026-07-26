@@ -37,11 +37,14 @@ jean-claude profile create work
 # Create non-interactively
 jean-claude profile create work --yes --shell .zshrc
 
+# Fish users: aliases go in fish's config file
+jean-claude profile create work --yes --shell .config/fish/config.fish
+
 # List your profiles
 jean-claude profile list
 
 # Launch Claude Code with a profile
-claude-work
+claude-work  # works in zsh, bash, and fish
 
 # Re-create symlinks if something breaks
 jean-claude profile refresh work
@@ -90,6 +93,7 @@ Syncing is optional and uses Git to keep your configuration in sync across machi
 - `agents/` — Your custom agents
 - `keybindings.json` — Your keyboard shortcuts
 - `statusline.sh` — Your statusline configuration
+- `~/.config/ccstatusline/settings.json` — Your [ccstatusline](https://github.com/sirmalloc/ccstatusline) configuration
 - Profile definitions — So profiles carry over to other machines
 
 ### Commands

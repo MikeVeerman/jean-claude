@@ -255,7 +255,7 @@ export async function handleProfileDelete(
 
   // Remove shell alias
   logger.step(2, 2, 'Cleaning up shell aliases...');
-  const shellFiles = ['.zshrc', '.bashrc', '.bash_profile'];
+  const shellFiles = ['.zshrc', '.bashrc', '.bash_profile', '.config/fish/config.fish'];
   for (const shellFile of shellFiles) {
     const removed = await removeShellAlias(name, shellFile);
     if (removed) {

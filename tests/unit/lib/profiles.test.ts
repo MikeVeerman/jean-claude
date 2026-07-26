@@ -22,6 +22,7 @@ import {
   installShellAlias,
   removeShellAlias,
   getShellAliasLine,
+  detectShellConfigFiles,
   SHARED_ITEMS,
 } from '../../../src/lib/profiles.js';
 import { getConfigPaths, getJeanClaudeDir } from '../../../src/lib/paths.js';
@@ -325,6 +326,22 @@ describe('profiles.ts', () => {
       // Don't create any shared items
       const created = await createSymlinks(sourceDir, targetDir);
       expect(created).toEqual([]);
+    });
+  });
+
+  describe('detectShellConfigFiles', () => {
+    it('should detect fish config file when it exists', async () => {
+      const fishConfig = path.join(tempDir, '.config/fish/config.fish');
+      await fs.ensureFile(fishConfig);
+
+      const options = detectShellConfigFiles();
+      expect(options.some((o) => o.value === '.config/fish/config.fish')).toBe(true);
+    });
+
+    it('should always offer fish config even if it does not exist', async () => {
+      const options = detectShellConfigFiles();
+      expect(options.some((o) => o.value === '.config/fish/config.fish')).toBe(true);
+      expect(options.find((o) => o.value === '.config/fish/config.fish')?.name).toContain('will be created');
     });
   });
 });

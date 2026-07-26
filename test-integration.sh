@@ -1181,6 +1181,17 @@ test_profile_shell_alias() {
     assert_file_contains "$MACHINE1_DIR/.zshrc" "CLAUDE_CONFIG_DIR"
 }
 
+test_profile_shell_alias_fish() {
+    print_test "profile shell alias installation for fish"
+
+    run_jean_claude "$MACHINE1_DIR" profile create fish-alias --yes --shell .config/fish/config.fish
+
+    assert_file_exists "$MACHINE1_DIR/.config/fish/config.fish"
+    assert_file_contains "$MACHINE1_DIR/.config/fish/config.fish" "jean-claude profile: fish-alias"
+    assert_file_contains "$MACHINE1_DIR/.config/fish/config.fish" "claude-fish-alias"
+    assert_file_contains "$MACHINE1_DIR/.config/fish/config.fish" "CLAUDE_CONFIG_DIR"
+}
+
 test_profile_list() {
     print_test "profile list command"
 

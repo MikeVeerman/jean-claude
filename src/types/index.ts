@@ -32,6 +32,13 @@ export interface FileMapping {
   source: string;
   target: string;
   type: 'file' | 'directory';
+  /**
+   * Override the base directory for this mapping.
+   * When absent, paths are resolved relative to the claude config dir.
+   * When present, source paths are resolved relative to baseDir
+   * (e.g., '~/.config' for ccstatusline).
+   */
+  baseDir?: string;
 }
 
 export interface MetaJson {

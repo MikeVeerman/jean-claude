@@ -32,6 +32,8 @@ import {
   getShellAliasLine,
   checkSharedItemHealth,
   relinkAllProfiles,
+  detectShellConfigFiles,
+  SHARED_ITEMS,
 } from '../../../src/lib/profiles.js';
 import { getConfigPaths, getJeanClaudeDir, detectPlatform } from '../../../src/lib/paths.js';
 
@@ -309,6 +311,20 @@ describe('profiles.ts', () => {
       expect(content2).toContain('/updated/path');
     });
 
+    it('should create missing parent directories (fish config)', async () => {
+      const profile = { alias: 'claude-fishy', configDir: path.join(tempDir, '.claude-fishy') };
+
+      // ~/.config/fish does not exist yet
+      await installShellAlias('fishy', profile, '.config/fish/config.fish');
+
+      const content = await fs.readFile(
+        path.join(tempDir, '.config/fish/config.fish'),
+        'utf-8'
+      );
+      expect(content).toContain('jean-claude profile: fishy');
+      expect(content).toContain('claude-fishy');
+    });
+
     it('should not match other profile names when replacing', async () => {
       const rcPath = path.join(tempDir, '.zshrc');
       const profileA = { alias: 'claude-a', configDir: path.join(tempDir, '.claude-a') };
@@ -573,6 +589,25 @@ describe('profiles.ts', () => {
     it('escapes backslashes for bash/zsh double-quoted strings', () => {
       const line = getShellAliasLine(profile, '.bashrc');
       expect(line).toContain('CLAUDE_CONFIG_DIR="C:\\\\Users\\\\me\\\\.claude-work"');
+    });
+  });
+
+  describe('detectShellConfigFiles', () => {
+    it('should detect fish config file when it exists', async () => {
+      const fishConfig = path.join(tempDir, '.config/fish/config.fish');
+      await fs.ensureFile(fishConfig);
+
+      const options = detectShellConfigFiles();
+      const fishOption = options.find((o) => o.value === '.config/fish/config.fish');
+      expect(fishOption).toBeDefined();
+      // Detected as existing, not offered via the "will be created" fallback
+      expect(fishOption?.name).not.toContain('will be created');
+    });
+
+    it('should always offer fish config even if it does not exist', async () => {
+      const options = detectShellConfigFiles();
+      expect(options.some((o) => o.value === '.config/fish/config.fish')).toBe(true);
+      expect(options.find((o) => o.value === '.config/fish/config.fish')?.name).toContain('will be created');
     });
   });
 });

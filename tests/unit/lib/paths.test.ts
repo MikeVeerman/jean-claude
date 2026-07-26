@@ -80,6 +80,18 @@ describe('paths.ts', () => {
       expect(contractPath('')).toBe('');
     });
 
+    it('should handle paths with trailing separators', () => {
+      const trailing = home + '/documents/folder' + path.sep;
+      const contracted = contractPath(trailing);
+      expect(contracted.startsWith('~')).toBe(true);
+      expect(expandPath(contracted)).toBe(trailing);
+    });
+
+    it('should pass through relative paths unchanged', () => {
+      expect(contractPath('./relative/path')).toBe('./relative/path');
+      expect(contractPath('../sibling/file.txt')).toBe('../sibling/file.txt');
+    });
+
     it('should be idempotent', () => {
       const contracted = contractPath(path.join(home, '.claude-work'));
       expect(contractPath(contracted)).toBe(contracted);

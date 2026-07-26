@@ -495,6 +495,9 @@ export async function installShellAlias(
       return [rcPath];
     }
   }
+
+  // Append alias block (fish config lives in ~/.config/fish, which may not exist yet)
+  await fs.ensureFile(rcPath);
   await fs.appendFile(rcPath, block);
   return [rcPath];
 }
@@ -585,6 +588,10 @@ export function detectShellConfigFiles(): Array<{ name: string; value: string }>
   if (fs.existsSync(path.join(home, '.bash_profile'))) {
     options.push({ name: '.bash_profile (bash)', value: '.bash_profile' });
   }
+  const fishConfig = path.join(home, '.config/fish/config.fish');
+  if (fs.existsSync(fishConfig)) {
+    options.push({ name: '.config/fish/config.fish (fish)', value: '.config/fish/config.fish' });
+  }
 
   // Always offer these even if they don't exist yet
   if (!options.some((o) => o.value === '.zshrc')) {
@@ -595,6 +602,9 @@ export function detectShellConfigFiles(): Array<{ name: string; value: string }>
       name: '.bashrc (bash) - will be created',
       value: '.bashrc',
     });
+  }
+  if (!options.some((o) => o.value === '.config/fish/config.fish')) {
+    options.push({ name: '.config/fish/config.fish (fish) - will be created', value: '.config/fish/config.fish' });
   }
 
   return options;

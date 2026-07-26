@@ -2,8 +2,8 @@ import { Command } from 'commander';
 import fs from 'fs-extra';
 import os from 'os';
 import chalk from 'chalk';
-import { logger, formatPath } from '../utils/logger.js';
-import { getConfigPaths, detectPlatform } from '../lib/paths.js';
+import { logger } from '../utils/logger.js';
+import { getConfigPaths, detectPlatform, contractPath } from '../lib/paths.js';
 import { relinkAllProfiles } from '../lib/profiles.js';
 import { isGitRepo, getGitStatus, commitAndPush, pull, hasMergeConflicts, resetHard, cleanUntracked } from '../lib/git.js';
 import { syncFromClaudeConfig, syncToClaudeConfig, updateLastSync, compareFiles, readMetaJson } from '../lib/sync.js';
@@ -55,14 +55,14 @@ export async function handleSyncPush(): Promise<void> {
 
   if (!(await isGitRepo(jeanClaudeDir))) {
     throw new JeanClaudeError(
-      `${formatPath(jeanClaudeDir)} is not a Git repository`,
+      `${contractPath(jeanClaudeDir)} is not a Git repository`,
       ErrorCode.NOT_GIT_REPO,
       'Run "jean-claude sync setup" to configure syncing.'
     );
   }
 
   // Step 1: Copy files from ~/.claude to ~/.jean-claude
-  logger.step(1, 2, `Syncing from ${formatPath(claudeConfigDir)}...`);
+  logger.step(1, 2, `Syncing from ${contractPath(claudeConfigDir)}...`);
   const syncResults = await syncFromClaudeConfig(claudeConfigDir, jeanClaudeDir);
   const synced = syncResults.filter((r) => r.action !== 'skipped');
   if (synced.length > 0) {
@@ -112,7 +112,7 @@ export async function handleSyncPush(): Promise<void> {
     logger.success('Pushed to remote');
   } else if (!gitStatus.remote) {
     logger.warn('No remote configured - changes committed locally only');
-    logger.dim(`Add a remote with: git -C ${formatPath(jeanClaudeDir)} remote add origin <url>`);
+    logger.dim(`Add a remote with: git -C ${contractPath(jeanClaudeDir)} remote add origin <url>`);
   }
 }
 
@@ -134,7 +134,7 @@ export async function handleSyncPull(options: { force?: boolean } = {}): Promise
 
   if (!(await isGitRepo(jeanClaudeDir))) {
     throw new JeanClaudeError(
-      `${formatPath(jeanClaudeDir)} is not a Git repository`,
+      `${contractPath(jeanClaudeDir)} is not a Git repository`,
       ErrorCode.NOT_GIT_REPO,
       'Run "jean-claude sync setup" to configure syncing.'
     );
@@ -176,12 +176,12 @@ export async function handleSyncPull(options: { force?: boolean } = {}): Promise
     throw new JeanClaudeError(
       'Merge conflicts detected',
       ErrorCode.MERGE_CONFLICT,
-      `Resolve conflicts in ${formatPath(jeanClaudeDir)} and run pull again.`
+      `Resolve conflicts in ${contractPath(jeanClaudeDir)} and run pull again.`
     );
   }
 
   // Apply to ~/.claude
-  logger.step(2, 2, `Applying to ${formatPath(claudeConfigDir)}...`);
+  logger.step(2, 2, `Applying to ${contractPath(claudeConfigDir)}...`);
   const results = await syncToClaudeConfig(jeanClaudeDir, claudeConfigDir);
   const applied = results.filter((r) => r.action !== 'skipped');
 
@@ -234,8 +234,8 @@ export async function handleSyncStatus(): Promise<void> {
 
   console.log('');
   logger.table([
-    ['Repository', formatPath(jeanClaudeDir)],
-    ['Claude Config', formatPath(claudeConfigDir)],
+    ['Repository', contractPath(jeanClaudeDir)],
+    ['Claude Config', contractPath(claudeConfigDir)],
     ['Platform', meta?.platform || 'unknown'],
   ]);
 

@@ -423,5 +423,37 @@ describe('sync.ts', () => {
         );
         expect(syncedContent).toBe('{"widgets":[{"type":"git-branch"}]}');
     });
+
+    it('should create a missing external target directory when syncing to it', async () => {
+      const externalConfigDir = path.join(tempDir, '.config', 'ccstatusline');
+      const jeanClaudeDir = path.join(tempDir, '.jean-claude');
+
+      await fs.ensureDir(jeanClaudeDir);
+      // Neither ~/.config nor ~/.config/ccstatusline exists — fs.copy must
+      // create the chain rather than fail
+      expect(await fs.pathExists(path.join(tempDir, '.config'))).toBe(false);
+
+      await fs.writeFile(
+        path.join(jeanClaudeDir, 'ccstatusline.json'),
+        '{"widgets":[{"type":"model"}]}'
+      );
+
+      const results = await syncToClaudeConfig(
+        jeanClaudeDir,
+        path.join(tempDir, '.claude')
+      );
+
+      const ccstatuslineResult = results.find(
+        (r: { file: string }) => r.file === 'ccstatusline.json'
+      );
+      expect(ccstatuslineResult).toBeDefined();
+      expect(ccstatuslineResult!.action).toBe('created');
+
+      const syncedContent = await fs.readFile(
+        path.join(externalConfigDir, 'settings.json'),
+        'utf-8'
+      );
+      expect(syncedContent).toBe('{"widgets":[{"type":"model"}]}');
+    });
   });
 });

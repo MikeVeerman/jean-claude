@@ -84,7 +84,7 @@ Profiles work independently of syncing — you can use them without setting up G
 
 ## Syncing
 
-Syncing is optional and uses Git to keep your configuration in sync across machines.
+Syncing is optional and uses Git to keep your **default config and profiles** in sync across machines.
 
 ### What gets synced?
 

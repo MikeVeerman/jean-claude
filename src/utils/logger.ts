@@ -1,5 +1,4 @@
 import chalk from 'chalk';
-import { contractPath } from '../lib/paths.js';
 
 const orange = chalk.hex('#FF6B4A');
 
@@ -48,6 +47,4 @@ export const logger = {
   },
 };
 
-export function formatPath(p: string): string {
-  return contractPath(p);
-}
+

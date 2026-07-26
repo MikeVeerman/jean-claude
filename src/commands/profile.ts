@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { logger, formatPath } from '../utils/logger.js';
+import { logger } from '../utils/logger.js';
 import { confirm, input, select } from '../utils/prompts.js';
 import {
   loadProfiles,
@@ -15,7 +15,7 @@ import {
   SHARED_ITEMS,
   type CreateProfileOptions,
 } from '../lib/profiles.js';
-import { getJeanClaudeDir } from '../lib/paths.js';
+import { getJeanClaudeDir, contractPath } from '../lib/paths.js';
 import { JeanClaudeError, ErrorCode } from '../types/index.js';
 import fs from 'fs-extra';
 
@@ -73,7 +73,7 @@ const profileCreateCommand = new Command('create')
     logger.heading(`Creating profile: ${name}`);
     console.log();
     logger.table([
-      ['Config directory', chalk.cyan(formatPath(configDir))],
+      ['Config directory', chalk.cyan(contractPath(configDir))],
       ['Shell alias', chalk.cyan(`claude-${name}`)],
     ]);
     console.log();
@@ -149,7 +149,7 @@ const profileCreateCommand = new Command('create')
       logger.list([
         `Reload your shell or run: ${chalk.cyan(`source ~/${shellFile}`)}`,
         `Then use ${chalk.cyan(`claude-${name}`)} to launch Claude Code with this profile.`,
-        `Edit ${chalk.cyan(formatPath(configDir) + '/CLAUDE.md')} to add profile-specific instructions.`,
+        `Edit ${chalk.cyan(contractPath(configDir) + '/CLAUDE.md')} to add profile-specific instructions.`,
       ]);
     }
   });
@@ -179,7 +179,7 @@ const profileListCommand = new Command('list')
       console.log(`  ${chalk.bold(name)}`);
       logger.table([
         ['Alias', chalk.cyan(profile.alias)],
-        ['Config', formatPath(profile.configDir)],
+        ['Config', contractPath(profile.configDir)],
         ['Status', status],
       ]);
 
@@ -243,7 +243,7 @@ const profileDeleteCommand = new Command('delete')
     logger.heading(`Delete profile: ${name}`);
     console.log();
     logger.warn(
-      `This will remove ${chalk.cyan(formatPath(profile.configDir))} and its contents.`
+      `This will remove ${chalk.cyan(contractPath(profile.configDir))} and its contents.`
     );
     logger.warn('Profile-specific files (like CLAUDE.md) will be lost.');
     logger.dim('Shared files in your main ~/.claude/ are not affected (they are the originals).');

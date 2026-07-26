@@ -105,7 +105,7 @@ export async function getGitStatus(dir: string): Promise<GitStatus> {
  * rewritten on the next sync. Any other conflict aborts the rebase and is
  * surfaced to the caller.
  */
-async function pullWithRebase(git: SimpleGit): Promise<void> {
+async function pullWithRebase(git: SimpleGit, dir: string): Promise<void> {
   try {
     await git.pull(['--rebase']);
   } catch (err) {
@@ -116,7 +116,15 @@ async function pullWithRebase(git: SimpleGit): Promise<void> {
       if (conflictFiles.length === 1 && conflictFiles[0] === 'meta.json') {
         await git.checkout(['--ours', 'meta.json']);
         await git.add('meta.json');
-        await git.env('GIT_EDITOR', 'true').rebase(['--continue']);
+        // simple-git blocks GIT_EDITOR unless allowUnsafeEditor is enabled.
+        // Use a dedicated instance so the guard stays active everywhere else;
+        // GIT_EDITOR=true is a no-op editor, needed because `rebase --continue`
+        // would otherwise open an interactive editor for the commit message.
+        const rebaseGit = simpleGit({
+          baseDir: dir,
+          unsafe: { allowUnsafeEditor: true },
+        });
+        await rebaseGit.env('GIT_EDITOR', 'true').rebase(['--continue']);
         return;
       }
       await git.rebase(['--abort']);
@@ -130,7 +138,7 @@ export async function pull(dir: string): Promise<{ success: boolean; message: st
 
   try {
     const before = await git.revparse(['HEAD']);
-    await pullWithRebase(git);
+    await pullWithRebase(git, dir);
     const after = await git.revparse(['HEAD']);
 
     if (before === after) {
@@ -184,7 +192,7 @@ export async function commitAndPush(
       // Only pull --rebase if we have an upstream tracking branch
       if (status.tracking) {
         try {
-          await pullWithRebase(git);
+          await pullWithRebase(git, dir);
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
           if (errMsg.includes('CONFLICT') || errMsg.includes('conflict')) {

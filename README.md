@@ -8,7 +8,7 @@ You've spent hours crafting the perfect `CLAUDE.md`. Your hooks are *chef's kiss
 
 Then you sit down at another machine and... nothing. Back to square one. Or you need separate configs for your work and personal Claude accounts, but maintaining them is a pain.
 
-**Jean-Claude fixes that.** It manages multiple Claude Code profiles and optionally syncs everything across machines via Git.
+**Jean-Claude fixes that.** It manages multiple Claude Code profiles and optionally syncs everything across machines via Git. Works on macOS, Linux, and Windows.
 
 ## Quick Start
 
@@ -94,7 +94,7 @@ Syncing is optional and uses Git to keep your configuration in sync across machi
 - `skills/` — Your custom skills
 - `agents/` — Your custom agents
 - `keybindings.json` — Your keyboard shortcuts
-- `statusline.sh` — Your statusline configuration
+- `statusline.sh` / `statusline.ps1` — Your statusline configuration
 - `~/.config/ccstatusline/settings.json` — Your [ccstatusline](https://github.com/sirmalloc/ccstatusline) configuration
 - Profile definitions — So profiles carry over to other machines
 
